@@ -181,7 +181,8 @@ code {
 
 .workspace {
   padding: 18px;
-  overflow: auto;
+  min-width: 0;
+  overflow: visible;
 }
 
 .workspace-tabs {
@@ -669,6 +670,7 @@ code {
 }
 
 .tooltip-wrap.is-open .tooltip-trigger {
+  opacity: 0;
   z-index: 0;
 }
 
