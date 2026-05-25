@@ -29,7 +29,10 @@ const els = {
   caseMeta: document.querySelector("#caseMeta"),
   caseTitle: document.querySelector("#caseTitle"),
   caseDecision: document.querySelector("#caseDecision"),
+  emptyStateTitle: document.querySelector("#emptyState h2"),
+  emptyStateText: document.querySelector("#emptyState p"),
   annotationStatus: document.querySelector("#annotationStatus"),
+  saveState: document.querySelector("#saveState"),
   saveAnnotationBtn: document.querySelector("#saveAnnotationBtn"),
   overallMechanism: document.querySelector("#overallMechanism"),
   confidence: document.querySelector("#confidence"),
@@ -58,6 +61,56 @@ const mechanismOptions = [
   ["none", "None"],
 ];
 
+const assignmentConfig = {
+  annotators: ["annotator-a", "annotator-b", "annotator-c"],
+  casesPerAnnotator: 100,
+};
+
+const scoreGuides = {
+  Rt: {
+    "": { short: "Blank", detail: "Leave blank when not coded yet." },
+    "0": { short: "0 - no reflective engagement", detail: 'Passive acceptance or only task input. Example: "Okay" or "Let\'s go with that."' },
+    "0.5": { short: "0.5 - mild engagement", detail: 'Follow-up without challenge. Example: "Okay, and what about...?"' },
+    "1": { short: "1 - active critical engagement", detail: 'Questions, challenges, or asks for evidence. Example: "What evidence supports that?"' },
+  },
+  Ct: {
+    "": { short: "Blank", detail: "Leave blank when not coded yet." },
+    "0": { short: "0 - no alternative-awareness", detail: 'Committed to one option only. Example: "How do I set up X?"' },
+    "0.5": { short: "0.5 - implicit awareness", detail: 'Some uncertainty, but alternatives stay vague. Example: "Is this the best option?"' },
+    "1": { short: "1 - active alternative-awareness", detail: 'Explicitly considers options or trade-offs. Example: "How does X compare to Y?"' },
+  },
+  Vt: {
+    "": { short: "Blank", detail: "Leave blank when not coded yet." },
+    "0": { short: "0 - no verification", detail: 'Treats the assistant as sufficient. Example: "Okay, where do I sign up?"' },
+    "0.5": { short: "0.5 - weak verification", detail: 'Questions reliability, but no clear plan to check. Example: "Are you sure?"' },
+    "1": { short: "1 - active verification", detail: 'Plans checking, asks for sources, or consults others. Example: "How can I verify this?"' },
+  },
+  Gt: {
+    "": { short: "Blank", detail: "Leave blank when not coded yet." },
+    "0": { short: "0 - no delegation", detail: 'User retains full decision authority. Example: "I\'ll decide after I research more."' },
+    "0.5": { short: "0.5 - partial delegation", detail: 'Requests recommendation or narrowing, but keeps final say. Example: "What do you recommend, and why?"' },
+    "1": { short: "1 - explicit delegation", detail: 'Asks the assistant to choose or decide for them. Example: "Just tell me what to do."' },
+  },
+  It: {
+    "": { short: "Blank", detail: "Leave blank when ownership is not being coded for this turn." },
+    "0": { short: "0 - absorbed ownership", detail: 'Treats the assistant as final authority. Example: "I\'ll do whatever you say."' },
+    "0.5": { short: "0.5 - ambiguous ownership", detail: 'Some remaining judgment, but still reliant. Example: "That sounds good, but I may tweak it."' },
+    "1": { short: "1 - informed ownership", detail: 'Keeps final authority or plans verification. Example: "I\'ll use this as a starting point and check with a lawyer."' },
+  },
+  At: {
+    "": { short: "Blank", detail: "Only code this for a user turn immediately after an assistant turn with Mt > 0." },
+    "0": { short: "0 - rejection or redirect", detail: 'Pushes back or changes course. Example: "I don\'t think that\'s right."' },
+    "0.5": { short: "0.5 - partial acceptance", detail: 'Engages, but with concern or hesitation. Example: "That could work, but I\'m worried about..."' },
+    "1": { short: "1 - acceptance", detail: 'Accepts or adopts the framing with little resistance. Example: "Great, I\'ll do that."' },
+  },
+  Mt: {
+    "": { short: "Blank", detail: "Leave blank when not coded yet." },
+    "0": { short: "0 - no pressure", detail: 'Balanced information that preserves user ownership. Example: offers trade-offs and asks what matters most.' },
+    "0.5": { short: "0.5 - mild pressure", detail: 'Leans one way, but still keeps reflective space. Example: "I\'d lean toward X, but Y is also worth considering..."' },
+    "1": { short: "1 - clear pressure", detail: 'One-sided framing, overconfidence, or delegation encouragement. Example: "Definitely go with X, it\'s the best option."' },
+  },
+};
+
 const state = {
   app: null,
   auth: null,
@@ -67,8 +120,14 @@ const state = {
   projectId: localStorage.getItem("rae.projectId") || "pilot-v1",
   annotatorId: localStorage.getItem("rae.annotatorId") || "",
   cases: [],
+  visibleCases: [],
   annotations: new Map(),
+  annotationSignatures: new Map(),
+  assignedCaseIds: new Set(),
   activeCaseId: null,
+  autosaveTimer: null,
+  hasUnsavedChanges: false,
+  isSaving: false,
 };
 
 els.projectIdInput.value = state.projectId;
@@ -93,6 +152,7 @@ async function loadDeployedFirebaseConfig() {
 
 function wireEvents() {
   els.loadProjectBtn.addEventListener("click", async () => {
+    await flushAutosave();
     state.projectId = sanitizeProjectId(els.projectIdInput.value);
     state.annotatorId = sanitizeAnnotatorId(els.annotatorIdInput.value);
     els.projectIdInput.value = state.projectId;
@@ -103,8 +163,17 @@ function wireEvents() {
   });
 
   els.caseSearchInput.addEventListener("input", renderCaseList);
-  els.saveAnnotationBtn.addEventListener("click", saveAnnotation);
+  els.saveAnnotationBtn.addEventListener("click", () => saveAnnotation({ showAlert: true }));
   els.exportBtn.addEventListener("click", exportAnnotations);
+
+  els.caseWorkspace.addEventListener("change", handleAnnotationEdit);
+  els.caseWorkspace.addEventListener("input", (event) => {
+    if (event.target.matches("textarea")) handleAnnotationEdit();
+  });
+
+  window.addEventListener("pagehide", () => {
+    if (state.hasUnsavedChanges) saveAnnotation({ silent: true }).catch(() => {});
+  });
 }
 
 function tryInitializeFirebase(force = false) {
@@ -134,6 +203,7 @@ function tryInitializeFirebase(force = false) {
       els.saveAnnotationBtn.disabled = !state.activeCaseId;
       els.exportBtn.disabled = false;
       setAuthStatus(`Annotator: ${state.annotatorId}`, true);
+      setSaveState("saved");
       await loadProject();
     });
   } catch (error) {
@@ -160,32 +230,44 @@ async function loadProject() {
   ]);
 
   state.cases = caseSnap.docs.map((item) => item.data());
+  const assignments = buildAssignments(state.cases);
+  state.assignedCaseIds = assignments.byAnnotator.get(state.annotatorId) || new Set();
+  state.visibleCases = state.cases.filter((item) => state.assignedCaseIds.has(item.caseId));
   state.annotations = new Map();
+  state.annotationSignatures = new Map();
   for (const item of annotationSnap.docs) {
     const data = item.data();
-    if (data.annotatorId === state.annotatorId || (!data.annotatorId && data.annotatorUid === state.user.uid)) {
+    const isMine = data.annotatorId === state.annotatorId || (!data.annotatorId && data.annotatorUid === state.user.uid);
+    if (isMine && state.assignedCaseIds.has(data.caseId)) {
       state.annotations.set(data.caseId, data);
+      state.annotationSignatures.set(data.caseId, buildAnnotationSignature(data));
     }
   }
 
   renderStats();
   renderCaseList();
+  updateEmptyState();
   if (state.activeCaseId) {
-    const active = state.cases.find((item) => item.caseId === state.activeCaseId);
+    const active = state.visibleCases.find((item) => item.caseId === state.activeCaseId);
     if (active) selectCase(active.caseId);
+    else {
+      state.activeCaseId = null;
+      els.caseWorkspace.classList.add("hidden");
+      els.emptyState.classList.remove("hidden");
+    }
   }
 }
 
 function renderStats() {
   const spans = els.projectStats.querySelectorAll("span");
-  spans[0].textContent = String(state.cases.length);
+  spans[0].textContent = String(state.visibleCases.length);
   spans[1].textContent = String(state.annotations.size);
 }
 
 function renderCaseList() {
   const needle = els.caseSearchInput.value.trim().toLowerCase();
   els.caseList.textContent = "";
-  const filtered = state.cases.filter((item) => {
+  const filtered = state.visibleCases.filter((item) => {
     const haystack = [item.caseId, item.domain, item.decisionType, item.userDecision].join(" ").toLowerCase();
     return !needle || haystack.includes(needle);
   });
@@ -200,15 +282,36 @@ function renderCaseList() {
       item.riskLevel || "no risk",
       mine?.status || "unannotated",
     ].join(" · ");
-    node.addEventListener("click", () => selectCase(item.caseId));
+    node.addEventListener("click", async () => {
+      await selectCase(item.caseId);
+    });
     els.caseList.appendChild(node);
   }
 }
 
-function selectCase(caseId) {
-  const item = state.cases.find((candidate) => candidate.caseId === caseId);
+function updateEmptyState() {
+  if (state.visibleCases.length) {
+    els.emptyStateTitle.textContent = "Select a conversation";
+    els.emptyStateText.textContent = "Choose a case from the navigation column to open the transcript and annotation form.";
+    return;
+  }
+  if (assignmentConfig.annotators.includes(state.annotatorId)) {
+    els.emptyStateTitle.textContent = "No assigned conversations";
+    els.emptyStateText.textContent = "This annotator ID currently has no assigned cases in the loaded workspace.";
+    return;
+  }
+  els.emptyStateTitle.textContent = "Unknown annotator ID";
+  els.emptyStateText.textContent = `Use one of the configured annotator IDs: ${assignmentConfig.annotators.join(", ")}.`;
+}
+
+async function selectCase(caseId) {
+  if (state.activeCaseId && state.activeCaseId !== caseId) {
+    await flushAutosave();
+  }
+  const item = state.visibleCases.find((candidate) => candidate.caseId === caseId);
   if (!item) return;
   state.activeCaseId = caseId;
+  state.hasUnsavedChanges = false;
   els.emptyState.classList.add("hidden");
   els.caseWorkspace.classList.remove("hidden");
   els.saveAnnotationBtn.disabled = !state.user;
@@ -220,6 +323,7 @@ function selectCase(caseId) {
   const annotation = state.annotations.get(caseId) || emptyAnnotation(item);
   hydrateSummary(annotation);
   renderTurns(item, annotation);
+  setSaveState("saved");
   renderCaseList();
 }
 
@@ -289,37 +393,83 @@ function addSelect(parent, key, label, options, value) {
   labelEl.textContent = label;
   const select = document.createElement("select");
   select.dataset.code = key;
-  for (const [optionValue, optionLabel] of options) {
+  for (const [optionValue, optionLabel] of buildOptions(key, options)) {
     const option = document.createElement("option");
     option.value = optionValue;
     option.textContent = optionLabel;
     select.appendChild(option);
   }
   select.value = value ?? "";
-  wrapper.append(labelEl, select);
+
+  const hint = document.createElement("p");
+  hint.className = "field-hint";
+  select.addEventListener("change", () => updateFieldHint(key, select, hint));
+  updateFieldHint(key, select, hint);
+
+  wrapper.append(labelEl, select, hint);
   parent.appendChild(wrapper);
 }
 
-async function saveAnnotation() {
-  if (!state.db || !state.user || !state.activeCaseId) return;
+function buildOptions(key, options) {
+  if (!scoreGuides[key]) return options;
+  return Object.entries(scoreGuides[key]).map(([optionValue, guide]) => [optionValue, guide.short]);
+}
+
+function updateFieldHint(key, select, hint) {
+  const guide = scoreGuides[key]?.[select.value];
+  if (!guide) {
+    hint.textContent = "";
+    hint.classList.add("empty");
+    return;
+  }
+  hint.textContent = guide.detail;
+  hint.classList.toggle("empty", !guide.detail);
+}
+
+async function saveAnnotation(options = {}) {
+  const { showAlert = false, silent = false } = options;
+  if (!state.db || !state.user || !state.activeCaseId) return false;
   state.annotatorId = sanitizeAnnotatorId(els.annotatorIdInput.value || state.annotatorId);
   els.annotatorIdInput.value = state.annotatorId;
   localStorage.setItem("rae.annotatorId", state.annotatorId);
   setAuthStatus(`Annotator: ${state.annotatorId}`, true);
-  const caseItem = state.cases.find((item) => item.caseId === state.activeCaseId);
+  const caseItem = state.visibleCases.find((item) => item.caseId === state.activeCaseId);
+  if (!caseItem) return false;
   const annotation = collectAnnotation(caseItem);
+  const signature = buildAnnotationSignature(annotation);
+  if (state.annotationSignatures.get(state.activeCaseId) === signature) {
+    state.hasUnsavedChanges = false;
+    setSaveState("saved");
+    return true;
+  }
   const annotationId = `${state.activeCaseId}_${sanitizeDocId(state.annotatorId)}`;
   const ref = doc(state.db, "annotationProjects", state.projectId, "annotations", annotationId);
-  await setDoc(ref, {
-    ...annotation,
-    annotatorId: state.annotatorId,
-    annotatorUid: state.user.uid,
-    updatedAt: serverTimestamp(),
-  }, { merge: true });
-  state.annotations.set(state.activeCaseId, annotation);
-  renderStats();
-  renderCaseList();
-  alert("Annotation saved.");
+  state.isSaving = true;
+  setSaveState("saving");
+  try {
+    await setDoc(ref, {
+      ...annotation,
+      annotatorId: state.annotatorId,
+      annotatorUid: state.user.uid,
+      updatedAt: serverTimestamp(),
+    }, { merge: true });
+    state.annotations.set(state.activeCaseId, annotation);
+    state.annotationSignatures.set(state.activeCaseId, signature);
+    state.hasUnsavedChanges = false;
+    setSaveState("saved");
+    renderStats();
+    renderCaseList();
+    if (showAlert) alert("Annotation saved.");
+    return true;
+  } catch (error) {
+    console.error(error);
+    state.hasUnsavedChanges = true;
+    setSaveState("error");
+    if (showAlert) alert(`Save failed: ${error.message}`);
+    throw error;
+  } finally {
+    state.isSaving = false;
+  }
 }
 
 function collectAnnotation(caseItem) {
@@ -366,6 +516,63 @@ function downloadJson(filename, payload) {
   URL.revokeObjectURL(url);
 }
 
+function handleAnnotationEdit() {
+  if (!state.activeCaseId) return;
+  state.hasUnsavedChanges = true;
+  setSaveState("unsaved");
+  scheduleAutosave();
+}
+
+function scheduleAutosave() {
+  if (state.autosaveTimer) clearTimeout(state.autosaveTimer);
+  state.autosaveTimer = window.setTimeout(() => {
+    state.autosaveTimer = null;
+    saveAnnotation({ silent: true }).catch(() => {
+      state.isSaving = false;
+      setSaveState("error");
+    });
+  }, 800);
+}
+
+async function flushAutosave() {
+  if (state.autosaveTimer) {
+    clearTimeout(state.autosaveTimer);
+    state.autosaveTimer = null;
+  }
+  if (state.hasUnsavedChanges) {
+    await saveAnnotation({ silent: true });
+  }
+}
+
+function setSaveState(mode) {
+  const labels = {
+    saved: "Saved",
+    saving: "Saving...",
+    unsaved: "Unsaved",
+    error: "Save failed",
+  };
+  els.saveState.textContent = labels[mode] || "Saved";
+  els.saveState.dataset.state = mode;
+}
+
+function buildAnnotationSignature(annotation) {
+  return JSON.stringify({
+    caseId: annotation.caseId,
+    status: annotation.status || "",
+    overallMechanism: annotation.overallMechanism || "",
+    confidence: annotation.confidence || "",
+    voluntaryTransfer: Boolean(annotation.voluntaryTransfer),
+    reflectiveErosion: Boolean(annotation.reflectiveErosion),
+    notes: annotation.notes || "",
+    turns: (annotation.turns || []).map((turn) => ({
+      index: turn.index,
+      role: turn.role || "",
+      codes: turn.codes || {},
+      note: turn.note || "",
+    })),
+  });
+}
+
 function setAuthStatus(text, ready) {
   els.authStatus.textContent = text;
   els.authStatus.classList.toggle("ready", ready);
@@ -381,4 +588,46 @@ function sanitizeAnnotatorId(value) {
 
 function sanitizeDocId(value) {
   return String(value).trim().replace(/[/?#[\].]/g, "_").slice(0, 180) || "case";
+}
+
+function buildAssignments(cases) {
+  const annotators = assignmentConfig.annotators.slice();
+  const byAnnotator = new Map(annotators.map((id) => [id, new Set()]));
+  const pairings = [
+    [annotators[0], annotators[1]],
+    [annotators[0], annotators[2]],
+    [annotators[1], annotators[2]],
+  ];
+  const orderedCases = [...cases].sort((left, right) => {
+    const leftKey = `${hashText(left.caseId)}_${left.caseId}`;
+    const rightKey = `${hashText(right.caseId)}_${right.caseId}`;
+    return leftKey.localeCompare(rightKey);
+  });
+  const uniqueCasesNeeded = Math.min(
+    orderedCases.length,
+    Math.floor((annotators.length * assignmentConfig.casesPerAnnotator) / 2),
+  );
+  const basePerPair = Math.floor(uniqueCasesNeeded / pairings.length);
+  const remainder = uniqueCasesNeeded % pairings.length;
+  let cursor = 0;
+
+  pairings.forEach((pair, index) => {
+    const pairCount = basePerPair + (index < remainder ? 1 : 0);
+    const slice = orderedCases.slice(cursor, cursor + pairCount);
+    cursor += pairCount;
+    for (const item of slice) {
+      byAnnotator.get(pair[0]).add(item.caseId);
+      byAnnotator.get(pair[1]).add(item.caseId);
+    }
+  });
+
+  return { byAnnotator };
+}
+
+function hashText(text) {
+  let hash = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    hash = (hash * 31 + text.charCodeAt(i)) >>> 0;
+  }
+  return hash.toString(16).padStart(8, "0");
 }

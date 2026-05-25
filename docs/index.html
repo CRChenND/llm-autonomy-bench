@@ -27,12 +27,13 @@
           <input id="projectIdInput" type="text" value="pilot-v1" />
           <label for="annotatorIdInput">Annotator ID</label>
           <input id="annotatorIdInput" type="text" placeholder="e.g. alice, coder-01" />
+          <p class="hint">Assigned annotator IDs: <code>annotator-a</code>, <code>annotator-b</code>, <code>annotator-c</code>.</p>
           <div class="button-row">
             <button id="loadProjectBtn" type="button">Load workspace</button>
             <button id="exportBtn" type="button" class="secondary" disabled>Export annotations</button>
           </div>
           <div id="projectStats" class="stats-grid">
-            <div><strong>Cases</strong><span>0</span></div>
+            <div><strong>Assigned</strong><span>0</span></div>
             <div><strong>Mine</strong><span>0</span></div>
           </div>
         </section>
@@ -66,7 +67,8 @@
                 <option value="complete">Complete</option>
                 <option value="needs_adjudication">Needs adjudication</option>
               </select>
-              <button id="saveAnnotationBtn" type="button" disabled>Save annotation</button>
+              <span id="saveState" class="save-state">Saved</span>
+              <button id="saveAnnotationBtn" type="button" disabled>Save now</button>
             </div>
           </div>
 
