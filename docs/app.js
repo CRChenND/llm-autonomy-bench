@@ -79,10 +79,30 @@ const state = {
 };
 
 els.projectIdInput.value = state.projectId;
-els.firebaseConfigInput.value = localStorage.getItem("rae.firebaseConfig") || "";
 
+await bootstrapConfig();
 wireEvents();
 tryInitializeFirebase();
+
+async function bootstrapConfig() {
+  const savedConfig = localStorage.getItem("rae.firebaseConfig");
+  if (savedConfig) {
+    els.firebaseConfigInput.value = savedConfig;
+    return;
+  }
+
+  const deployedConfig = await loadDeployedFirebaseConfig();
+  els.firebaseConfigInput.value = deployedConfig ? JSON.stringify(deployedConfig, null, 2) : "";
+}
+
+async function loadDeployedFirebaseConfig() {
+  try {
+    const module = await import("./firebase-config.js");
+    return module.firebaseConfig || module.default || null;
+  } catch (error) {
+    return null;
+  }
+}
 
 function wireEvents() {
   els.saveConfigBtn.addEventListener("click", () => {

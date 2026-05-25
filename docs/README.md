@@ -21,7 +21,15 @@ This is a buildless static web app for turn-level annotation of reflective auton
 5. Apply rules based on `firebase-rules.example`.
 6. Create a web app in Firebase and copy its config object.
 
-Paste the config JSON into the app's Firebase panel:
+For deployed GitHub Pages, add the config JSON as a repository secret named `FIREBASE_CONFIG_JSON`:
+
+```text
+GitHub repo → Settings → Secrets and variables → Actions → New repository secret
+Name: FIREBASE_CONFIG_JSON
+Value: the Firebase web config JSON
+```
+
+Use strict JSON, without `const firebaseConfig =`:
 
 ```json
 {
@@ -34,18 +42,23 @@ Paste the config JSON into the app's Firebase panel:
 }
 ```
 
-The Firebase web config is not a server secret, but GitHub secret scanning may flag API-key-shaped values. Keep project configs out of committed source files and share them with annotators through a separate setup channel. Access control should be enforced with Firebase Auth and Firestore rules.
+The deployment workflow generates `docs/firebase-config.js` during the Pages build. That generated file is not committed to the repository.
+
+For local development, either paste the config JSON into the app's Firebase panel or create a local, ignored file at `docs/firebase-config.js` based on `docs/firebase-config.example.js`.
+
+The Firebase web config is not a server secret, but GitHub secret scanning may flag API-key-shaped values. Keep project configs out of committed source files. Access control should be enforced with Firebase Auth and Firestore rules.
 
 If the app is open to unfamiliar annotators, do not rely on hidden UI controls for protection. Firestore rules should enforce who can import cases, read annotations, and write annotations.
 
 ## GitHub Pages Deployment
 
-This app is already placed under `docs/`, which GitHub Pages supports without a build step.
+This app is placed under `docs/`. The repository includes `.github/workflows/deploy-pages.yml`, which deploys the app to GitHub Pages and injects `firebase-config.js` from the `FIREBASE_CONFIG_JSON` repository secret.
 
-1. Push the repository to GitHub.
+1. Add the `FIREBASE_CONFIG_JSON` repository secret.
 2. Open repository **Settings > Pages**.
-3. Set **Source** to the branch you use, and **Folder** to `/docs`.
-4. Save and open the published Pages URL.
+3. Set **Source** to **GitHub Actions**.
+4. Push to `main` or run the **Deploy GitHub Pages** workflow manually.
+5. Open the published Pages URL.
 
 ## Data Model
 
