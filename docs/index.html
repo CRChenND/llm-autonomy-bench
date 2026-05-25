@@ -19,15 +19,17 @@
 
     <main class="layout">
       <aside class="sidebar">
-        <section class="panel">
-          <h2>Project</h2>
+        <section class="panel nav-panel">
+          <p class="nav-label">Navigation</p>
+          <h2>Workspace</h2>
+          <p class="nav-copy">Load a shared project, identify yourself, then browse conversations from the left.</p>
           <label for="projectIdInput">Project ID</label>
           <input id="projectIdInput" type="text" value="pilot-v1" />
-          <label for="annotatorIdInput">Your annotator ID</label>
+          <label for="annotatorIdInput">Annotator ID</label>
           <input id="annotatorIdInput" type="text" placeholder="e.g. alice, coder-01" />
           <div class="button-row">
-            <button id="loadProjectBtn" type="button">Load project</button>
-            <button id="exportBtn" type="button" class="secondary" disabled>Export</button>
+            <button id="loadProjectBtn" type="button">Load workspace</button>
+            <button id="exportBtn" type="button" class="secondary" disabled>Export annotations</button>
           </div>
           <div id="projectStats" class="stats-grid">
             <div><strong>Cases</strong><span>0</span></div>
@@ -36,17 +38,9 @@
         </section>
 
         <section class="panel">
-          <h2>Import Cases</h2>
-          <label for="caseFileInput">Dataset file</label>
-          <input id="caseFileInput" type="file" accept=".json,.jsonl,.ndjson,.csv,application/json,text/csv" />
-          <button id="importBtn" type="button" disabled>Import to Firestore</button>
-          <p class="hint">Supports WildChat retained full-context JSONL, ShareGPT/OpenAI messages, prompt-response rows, conversation text, and CSV.</p>
-        </section>
-
-        <section class="panel">
           <div class="section-head">
-            <h2>Cases</h2>
-            <input id="caseSearchInput" type="search" placeholder="Search" />
+            <h2>Conversations</h2>
+            <input id="caseSearchInput" type="search" placeholder="Search cases" />
           </div>
           <div id="caseList" class="case-list" aria-live="polite"></div>
         </section>
@@ -54,8 +48,8 @@
 
       <section class="workspace">
         <section id="emptyState" class="empty-state">
-          <h2>Select or import a case</h2>
-          <p>Import retained cases or choose an existing conversation to annotate.</p>
+          <h2>Select a conversation</h2>
+          <p>Choose a case from the navigation column to open the transcript and annotation form.</p>
         </section>
 
         <section id="caseWorkspace" class="case-workspace hidden">
@@ -123,7 +117,7 @@
           <span class="role-pill"></span>
           <span class="turn-index"></span>
         </div>
-        <pre class="turn-content"></pre>
+        <div class="turn-content"></div>
         <div class="turn-coding"></div>
         <textarea class="turn-note" rows="2" placeholder="Turn note"></textarea>
       </article>
