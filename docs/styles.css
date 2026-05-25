@@ -605,6 +605,8 @@ code {
 }
 
 .tooltip-trigger {
+  position: relative;
+  z-index: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -628,7 +630,7 @@ code {
   position: absolute;
   left: 0;
   top: calc(100% + 8px);
-  z-index: 9999;
+  z-index: 2;
   width: min(420px, 56vw);
   max-width: calc(100vw - 32px);
   padding: 10px 11px;
@@ -651,6 +653,11 @@ code {
 .tooltip-wrap:focus-within .tooltip-bubble {
   opacity: 1;
   transform: translateY(0);
+}
+
+.tooltip-wrap:hover .tooltip-trigger,
+.tooltip-wrap:focus-within .tooltip-trigger {
+  z-index: 0;
 }
 
 .field-hint {
