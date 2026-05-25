@@ -674,6 +674,11 @@ code {
   z-index: 0;
 }
 
+body:has(.tooltip-wrap.is-open) .tooltip-wrap:not(.is-open) .tooltip-trigger {
+  opacity: 0;
+  pointer-events: none;
+}
+
 .tooltip-wrap[data-placement~="left"] .tooltip-bubble {
   left: auto;
   right: 0;
