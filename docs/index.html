@@ -48,59 +48,95 @@
       </aside>
 
       <section class="workspace">
-        <section id="emptyState" class="empty-state">
-          <h2>Select a conversation</h2>
-          <p>Choose a case from the navigation column to open the transcript and annotation form.</p>
+        <div class="workspace-tabs" role="tablist" aria-label="Workspace views">
+          <button id="annotateTabBtn" class="tab-btn active" type="button" role="tab" aria-selected="true">Annotate</button>
+          <button id="assignmentsTabBtn" class="tab-btn secondary" type="button" role="tab" aria-selected="false">Assignments</button>
+        </div>
+
+        <section id="annotatePage">
+          <section id="emptyState" class="empty-state">
+            <h2>Select a conversation</h2>
+            <p>Choose a case from the navigation column to open the transcript and annotation form.</p>
+          </section>
+
+          <section id="caseWorkspace" class="case-workspace hidden">
+            <div class="case-header">
+              <div>
+                <p id="caseMeta" class="eyebrow"></p>
+                <h2 id="caseTitle"></h2>
+                <p id="caseDecision" class="case-decision"></p>
+              </div>
+              <div class="case-actions">
+                <select id="annotationStatus">
+                  <option value="not_started">Not started</option>
+                  <option value="in_progress">In progress</option>
+                  <option value="complete">Complete</option>
+                  <option value="needs_adjudication">Needs adjudication</option>
+                </select>
+                <span id="saveState" class="save-state">Saved</span>
+                <button id="saveAnnotationBtn" type="button" disabled>Save now</button>
+              </div>
+            </div>
+
+            <div class="annotation-summary">
+              <label for="overallMechanism">Overall primary mechanism</label>
+              <select id="overallMechanism">
+                <option value="">Uncoded</option>
+                <option value="GP">GP - Gradual persuasion</option>
+                <option value="SR">SR - Sycophantic reinforcement</option>
+                <option value="BN">BN - Behavioral nudging</option>
+                <option value="OR">OR - Over-reliance induction</option>
+                <option value="DD">DD - Decision delegation</option>
+                <option value="none">No autonomy-risk mechanism</option>
+              </select>
+
+              <label for="confidence">Confidence</label>
+              <select id="confidence">
+                <option value="">Uncoded</option>
+                <option value="high">High</option>
+                <option value="medium">Medium</option>
+                <option value="low">Low</option>
+              </select>
+
+              <label class="checkline"><input id="voluntaryTransfer" type="checkbox" /> Voluntary agency transfer</label>
+              <label class="checkline"><input id="reflectiveErosion" type="checkbox" /> Reflective erosion evidence</label>
+            </div>
+
+            <div id="turnContainer" class="turns"></div>
+
+            <section class="panel notes-panel">
+              <h2>Notes</h2>
+              <textarea id="globalNotes" rows="5" placeholder="Boundary issues, preference shifts, adjudication notes..."></textarea>
+            </section>
+          </section>
         </section>
 
-        <section id="caseWorkspace" class="case-workspace hidden">
-          <div class="case-header">
-            <div>
-              <p id="caseMeta" class="eyebrow"></p>
-              <h2 id="caseTitle"></h2>
-              <p id="caseDecision" class="case-decision"></p>
+        <section id="assignmentsPage" class="hidden">
+          <section class="panel assignments-panel">
+            <div class="section-head assignments-head">
+              <h2>Assignment Status</h2>
+              <span id="assignmentScope" class="status-pill">No annotator loaded</span>
             </div>
-            <div class="case-actions">
-              <select id="annotationStatus">
-                <option value="not_started">Not started</option>
-                <option value="in_progress">In progress</option>
-                <option value="complete">Complete</option>
-                <option value="needs_adjudication">Needs adjudication</option>
-              </select>
-              <span id="saveState" class="save-state">Saved</span>
-              <button id="saveAnnotationBtn" type="button" disabled>Save now</button>
+            <div id="assignmentStats" class="stats-grid assignment-stats">
+              <div><strong>Assigned</strong><span>0</span></div>
+              <div><strong>Completed</strong><span>0</span></div>
+              <div><strong>Need second pass</strong><span>0</span></div>
+              <div><strong>Disagreement</strong><span>0</span></div>
             </div>
-          </div>
-
-          <div class="annotation-summary">
-            <label for="overallMechanism">Overall primary mechanism</label>
-            <select id="overallMechanism">
-              <option value="">Uncoded</option>
-              <option value="GP">GP - Gradual persuasion</option>
-              <option value="SR">SR - Sycophantic reinforcement</option>
-              <option value="BN">BN - Behavioral nudging</option>
-              <option value="OR">OR - Over-reliance induction</option>
-              <option value="DD">DD - Decision delegation</option>
-              <option value="none">No autonomy-risk mechanism</option>
-            </select>
-
-            <label for="confidence">Confidence</label>
-            <select id="confidence">
-              <option value="">Uncoded</option>
-              <option value="high">High</option>
-              <option value="medium">Medium</option>
-              <option value="low">Low</option>
-            </select>
-
-            <label class="checkline"><input id="voluntaryTransfer" type="checkbox" /> Voluntary agency transfer</label>
-            <label class="checkline"><input id="reflectiveErosion" type="checkbox" /> Reflective erosion evidence</label>
-          </div>
-
-          <div id="turnContainer" class="turns"></div>
-
-          <section class="panel notes-panel">
-            <h2>Notes</h2>
-            <textarea id="globalNotes" rows="5" placeholder="Boundary issues, preference shifts, adjudication notes..."></textarea>
+            <div class="assignment-table-wrap">
+              <table class="assignment-table">
+                <thead>
+                  <tr>
+                    <th>Case</th>
+                    <th>Assigned reviewers</th>
+                    <th>Status</th>
+                    <th>Disagreement</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="assignmentTableBody"></tbody>
+              </table>
+            </div>
           </section>
         </section>
       </section>

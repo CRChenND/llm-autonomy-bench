@@ -24,6 +24,10 @@ const els = {
   projectStats: document.querySelector("#projectStats"),
   caseSearchInput: document.querySelector("#caseSearchInput"),
   caseList: document.querySelector("#caseList"),
+  annotateTabBtn: document.querySelector("#annotateTabBtn"),
+  assignmentsTabBtn: document.querySelector("#assignmentsTabBtn"),
+  annotatePage: document.querySelector("#annotatePage"),
+  assignmentsPage: document.querySelector("#assignmentsPage"),
   emptyState: document.querySelector("#emptyState"),
   caseWorkspace: document.querySelector("#caseWorkspace"),
   caseMeta: document.querySelector("#caseMeta"),
@@ -40,6 +44,9 @@ const els = {
   reflectiveErosion: document.querySelector("#reflectiveErosion"),
   turnContainer: document.querySelector("#turnContainer"),
   globalNotes: document.querySelector("#globalNotes"),
+  assignmentScope: document.querySelector("#assignmentScope"),
+  assignmentStats: document.querySelector("#assignmentStats"),
+  assignmentTableBody: document.querySelector("#assignmentTableBody"),
   caseItemTemplate: document.querySelector("#caseItemTemplate"),
   turnTemplate: document.querySelector("#turnTemplate"),
 };
@@ -153,9 +160,13 @@ const state = {
   cases: [],
   visibleCases: [],
   annotations: new Map(),
+  allAnnotationsByCase: new Map(),
   annotationSignatures: new Map(),
   assignedCaseIds: new Set(),
+  assignmentsByAnnotator: new Map(),
+  assignmentsByCase: new Map(),
   activeCaseId: null,
+  activeView: "annotate",
   autosaveTimer: null,
   hasUnsavedChanges: false,
   isSaving: false,
@@ -196,6 +207,8 @@ function wireEvents() {
   els.caseSearchInput.addEventListener("input", renderCaseList);
   els.saveAnnotationBtn.addEventListener("click", () => saveAnnotation({ showAlert: true }));
   els.exportBtn.addEventListener("click", exportAnnotations);
+  els.annotateTabBtn.addEventListener("click", async () => switchView("annotate"));
+  els.assignmentsTabBtn.addEventListener("click", async () => switchView("assignments"));
 
   els.caseWorkspace.addEventListener("change", handleAnnotationEdit);
   els.caseWorkspace.addEventListener("input", (event) => {
@@ -262,12 +275,19 @@ async function loadProject() {
 
   state.cases = caseSnap.docs.map((item) => item.data());
   const assignments = buildAssignments(state.cases);
+  state.assignmentsByAnnotator = assignments.byAnnotator;
+  state.assignmentsByCase = assignments.byCase;
   state.assignedCaseIds = assignments.byAnnotator.get(state.annotatorId) || new Set();
   state.visibleCases = state.cases.filter((item) => state.assignedCaseIds.has(item.caseId));
   state.annotations = new Map();
+  state.allAnnotationsByCase = new Map();
   state.annotationSignatures = new Map();
   for (const item of annotationSnap.docs) {
     const data = item.data();
+    if (!state.allAnnotationsByCase.has(data.caseId)) {
+      state.allAnnotationsByCase.set(data.caseId, new Map());
+    }
+    state.allAnnotationsByCase.get(data.caseId).set(data.annotatorId || data.annotatorUid || item.id, data);
     const isMine = data.annotatorId === state.annotatorId || (!data.annotatorId && data.annotatorUid === state.user.uid);
     if (isMine && state.assignedCaseIds.has(data.caseId)) {
       state.annotations.set(data.caseId, data);
@@ -277,6 +297,7 @@ async function loadProject() {
 
   renderStats();
   renderCaseList();
+  renderAssignmentsView();
   updateEmptyState();
   if (state.activeCaseId) {
     const active = state.visibleCases.find((item) => item.caseId === state.activeCaseId);
@@ -293,6 +314,23 @@ function renderStats() {
   const spans = els.projectStats.querySelectorAll("span");
   spans[0].textContent = String(state.visibleCases.length);
   spans[1].textContent = String(state.annotations.size);
+}
+
+async function switchView(view) {
+  if (view === state.activeView) return;
+  if (state.activeView === "annotate") {
+    await flushAutosave();
+  }
+  state.activeView = view;
+  const annotateActive = view === "annotate";
+  els.annotateTabBtn.classList.toggle("active", annotateActive);
+  els.annotateTabBtn.classList.toggle("secondary", !annotateActive);
+  els.annotateTabBtn.setAttribute("aria-selected", String(annotateActive));
+  els.assignmentsTabBtn.classList.toggle("active", !annotateActive);
+  els.assignmentsTabBtn.classList.toggle("secondary", annotateActive);
+  els.assignmentsTabBtn.setAttribute("aria-selected", String(!annotateActive));
+  els.annotatePage.classList.toggle("hidden", !annotateActive);
+  els.assignmentsPage.classList.toggle("hidden", annotateActive);
 }
 
 function renderCaseList() {
@@ -333,6 +371,135 @@ function updateEmptyState() {
   }
   els.emptyStateTitle.textContent = "Unknown annotator ID";
   els.emptyStateText.textContent = `Use one of the configured annotator IDs: ${assignmentConfig.annotators.join(", ")}.`;
+}
+
+function renderAssignmentsView() {
+  els.assignmentScope.textContent = state.annotatorId
+    ? `Assignments for ${state.annotatorId}`
+    : "No annotator loaded";
+  const statsSpans = els.assignmentStats.querySelectorAll("span");
+  const rows = state.visibleCases.map((item) => buildAssignmentRow(item));
+  const completedCount = rows.filter((row) => row.mineStatus === "complete").length;
+  const needSecondPassCount = rows.filter((row) => row.missingReviewer || row.mineStatus !== "complete").length;
+  const disagreementCount = rows.filter((row) => row.disagreement === "disagreement").length;
+  statsSpans[0].textContent = String(rows.length);
+  statsSpans[1].textContent = String(completedCount);
+  statsSpans[2].textContent = String(needSecondPassCount);
+  statsSpans[3].textContent = String(disagreementCount);
+
+  els.assignmentTableBody.textContent = "";
+  for (const row of rows) {
+    const tr = document.createElement("tr");
+    const caseCell = document.createElement("td");
+    caseCell.innerHTML = `<strong>${escapeHtml(row.title)}</strong><div class="assignment-meta">${escapeHtml(row.caseId)}</div>`;
+
+    const reviewersCell = document.createElement("td");
+    reviewersCell.innerHTML = row.reviewers.map((reviewer) =>
+      `<div class="reviewer-line"><span>${escapeHtml(reviewer.id)}</span><span class="assignment-badge ${reviewer.statusClass}">${escapeHtml(reviewer.statusLabel)}</span></div>`
+    ).join("");
+
+    const statusCell = document.createElement("td");
+    statusCell.innerHTML = `<span class="assignment-badge ${statusClassName(row.mineStatus)}">${escapeHtml(statusLabel(row.mineStatus))}</span>`;
+
+    const disagreementCell = document.createElement("td");
+    disagreementCell.innerHTML = `<span class="assignment-badge ${row.disagreementClass}">${escapeHtml(row.disagreementLabel)}</span>`;
+
+    const actionCell = document.createElement("td");
+    const openBtn = document.createElement("button");
+    openBtn.type = "button";
+    openBtn.className = "secondary inline-btn";
+    openBtn.textContent = "Open";
+    openBtn.addEventListener("click", async () => {
+      await switchView("annotate");
+      await selectCase(row.caseId);
+    });
+    actionCell.appendChild(openBtn);
+
+    tr.append(caseCell, reviewersCell, statusCell, disagreementCell, actionCell);
+    els.assignmentTableBody.appendChild(tr);
+  }
+}
+
+function buildAssignmentRow(item) {
+  const assignedReviewers = assignedAnnotatorsForCase(item.caseId);
+  const annotationsForCase = state.allAnnotationsByCase.get(item.caseId) || new Map();
+  const reviewers = assignedReviewers.map((id) => {
+    const annotation = annotationsForCase.get(id);
+    const status = annotation?.status || "not_started";
+    return {
+      id,
+      statusLabel: statusLabel(status),
+      statusClass: statusClassName(status),
+      annotation,
+    };
+  });
+  const mine = reviewers.find((reviewer) => reviewer.id === state.annotatorId);
+  const reviewerAnnotations = reviewers.filter((reviewer) => reviewer.annotation);
+  const finalizedStatuses = new Set(["complete", "needs_adjudication"]);
+  const allFinalized = reviewers.every((reviewer) => finalizedStatuses.has(reviewer.annotation?.status));
+  const missingReviewer = reviewerAnnotations.length < assignedReviewers.length;
+  const disagreement = allFinalized
+    && compareReviewPayloads(reviewerAnnotations[0].annotation, reviewerAnnotations[1].annotation)
+      ? "aligned"
+      : allFinalized
+        ? "disagreement"
+        : "pending";
+
+  return {
+    caseId: item.caseId,
+    title: item.userDecision || item.decisionType || item.caseId,
+    reviewers,
+    mineStatus: mine?.annotation?.status || "not_started",
+    missingReviewer,
+    disagreement,
+    disagreementLabel: disagreement === "aligned" ? "Aligned" : disagreement === "disagreement" ? "Needs review" : "Waiting",
+    disagreementClass: disagreement === "aligned" ? "status-complete" : disagreement === "disagreement" ? "status-needs_adjudication" : "status-not_started",
+  };
+}
+
+function assignedAnnotatorsForCase(caseId) {
+  return state.assignmentsByCase.get(caseId) || [];
+}
+
+function compareReviewPayloads(left, right) {
+  return buildReviewSignature(left) === buildReviewSignature(right);
+}
+
+function buildReviewSignature(annotation) {
+  return JSON.stringify({
+    status: annotation.status || "",
+    overallMechanism: annotation.overallMechanism || "",
+    confidence: annotation.confidence || "",
+    voluntaryTransfer: Boolean(annotation.voluntaryTransfer),
+    reflectiveErosion: Boolean(annotation.reflectiveErosion),
+    turns: (annotation.turns || []).map((turn) => ({
+      index: turn.index,
+      role: turn.role || "",
+      codes: turn.codes || {},
+    })),
+  });
+}
+
+function statusLabel(status) {
+  const labels = {
+    not_started: "Not started",
+    in_progress: "In progress",
+    complete: "Complete",
+    needs_adjudication: "Needs adjudication",
+  };
+  return labels[status] || "Not started";
+}
+
+function statusClassName(status) {
+  return `status-${status || "not_started"}`;
+}
+
+function escapeHtml(text) {
+  return String(text || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
 }
 
 async function selectCase(caseId) {
@@ -466,9 +633,12 @@ function buildTooltip(key) {
 
   const lines = [
     `${tooltipInfo.title}: ${tooltipInfo.definition}`,
-    `0 = ${guide["0"].short.replace(/^0 - /, "")}`,
-    `0.5 = ${guide["0.5"].short.replace(/^0\.5 - /, "")}`,
-    `1 = ${guide["1"].short.replace(/^1 - /, "")}`,
+    "",
+    `0: ${guide["0"].detail}`,
+    "",
+    `0.5: ${guide["0.5"].detail}`,
+    "",
+    `1: ${guide["1"].detail}`,
   ];
   bubble.textContent = lines.join("\n");
 
@@ -525,6 +695,7 @@ async function saveAnnotation(options = {}) {
     setSaveState("saved");
     renderStats();
     renderCaseList();
+    renderAssignmentsView();
     if (showAlert) alert("Annotation saved.");
     return true;
   } catch (error) {
@@ -659,6 +830,7 @@ function sanitizeDocId(value) {
 function buildAssignments(cases) {
   const annotators = assignmentConfig.annotators.slice();
   const byAnnotator = new Map(annotators.map((id) => [id, new Set()]));
+  const byCase = new Map();
   const pairings = [
     [annotators[0], annotators[1]],
     [annotators[0], annotators[2]],
@@ -684,10 +856,11 @@ function buildAssignments(cases) {
     for (const item of slice) {
       byAnnotator.get(pair[0]).add(item.caseId);
       byAnnotator.get(pair[1]).add(item.caseId);
+      byCase.set(item.caseId, pair.slice());
     }
   });
 
-  return { byAnnotator };
+  return { byAnnotator, byCase };
 }
 
 function hashText(text) {
