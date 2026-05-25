@@ -193,9 +193,15 @@ async function importCases() {
   }
 
   const text = await file.text();
-  const rows = parseJsonOrJsonl(text).map(normalizeCase).filter(Boolean);
+  const parsedRows = parseDatasetFile(text, file.name);
+  const rows = parsedRows
+    .map((row, index) => normalizeCase(row, {
+      fallbackIndex: index,
+      fallbackSource: inferSourceFromFilename(file.name),
+    }))
+    .filter(Boolean);
   if (!rows.length) {
-    alert("No valid cases found.");
+    alert("No valid full-context cases found. Expected turns/messages, conversation.turns, conversation_text, or prompt-response fields.");
     return;
   }
 
@@ -213,8 +219,14 @@ async function importCases() {
     await batch.commit();
   }
 
-  alert(`Imported ${rows.length} cases.`);
+  const skipped = parsedRows.length - rows.length;
+  alert(`Imported ${rows.length} cases.${skipped > 0 ? ` Skipped ${skipped} rows without usable conversation context.` : ""}`);
   await loadProject();
+}
+
+function parseDatasetFile(text, filename = "") {
+  if (/\.csv$/i.test(filename)) return parseCsv(text);
+  return parseJsonOrJsonl(text);
 }
 
 function parseJsonOrJsonl(text) {
@@ -230,33 +242,137 @@ function parseJsonOrJsonl(text) {
     .map((line) => JSON.parse(line));
 }
 
-function normalizeCase(row) {
-  const caseData = row.case || row;
-  const conversation = row.conversation || caseData.conversation || row.candidate?.conversation || {};
-  const turns = normalizeTurns(conversation.turns || caseData.turns || row.turns || row.messages || []);
+function parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let cell = "";
+  let inQuotes = false;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    const next = text[index + 1];
+    if (char === '"' && inQuotes && next === '"') {
+      cell += '"';
+      index += 1;
+    } else if (char === '"') {
+      inQuotes = !inQuotes;
+    } else if (char === "," && !inQuotes) {
+      row.push(cell);
+      cell = "";
+    } else if ((char === "\n" || char === "\r") && !inQuotes) {
+      if (char === "\r" && next === "\n") index += 1;
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = "";
+    } else {
+      cell += char;
+    }
+  }
+  if (cell || row.length) {
+    row.push(cell);
+    rows.push(row);
+  }
+  if (!rows.length) return [];
+
+  const headers = rows[0].map((header) => header.trim());
+  return rows.slice(1)
+    .filter((cells) => cells.some((value) => value.trim()))
+    .map((cells) => Object.fromEntries(headers.map((header, index) => [header, cells[index] ?? ""])));
+}
+
+function normalizeCase(row, options = {}) {
+  const caseData = objectOrFallback(parseMaybeJson(row.case), row);
+  const screening = objectOrFallback(parseMaybeJson(row.screening || caseData.screening), {});
+  const filterMetadata = objectOrFallback(parseMaybeJson(row.filter_metadata || row.filterMetadata || caseData.filter_metadata), {});
+  const conversation = firstPresent(
+    row.conversation,
+    caseData.conversation,
+    row.candidate?.conversation,
+    row.full_context,
+    row.fullContext,
+  );
+  const turns = extractTurns(row, caseData, conversation);
   if (!turns.length) return null;
 
-  const rawId = caseData.case_id || caseData.caseId || row.case_id || row.conversation_id || conversation.conversation_id;
-  const caseId = sanitizeDocId(rawId || `${caseData.source || "case"}_${hashText(JSON.stringify(turns).slice(0, 2000))}`);
+  const rawId = firstPresent(
+    caseData.case_id,
+    caseData.caseId,
+    row.case_id,
+    row.caseId,
+    row.conversation_id,
+    row.conversationId,
+    conversation?.conversation_id,
+    conversation?.conversationId,
+    row.id,
+    row.uid,
+  );
+  const source = firstPresent(caseData.source, conversation?.source, row.source, screening.source, options.fallbackSource, "dataset");
+  const decisionType = firstPresent(caseData.decision_type, caseData.decisionType, row.decision_type, row.decisionType, screening.decision_type, screening.decisionType);
+  const domain = firstPresent(caseData.domain, row.domain, screening.domain, filterMetadata.inferred_domain);
+  const caseId = sanitizeDocId(rawId || `${source}_${options.fallbackIndex ?? hashText(JSON.stringify(turns).slice(0, 2000))}`);
   return {
     caseId,
-    source: caseData.source || conversation.source || row.source || "",
-    conversationId: caseData.conversation_id || conversation.conversation_id || row.conversation_id || "",
-    domain: caseData.domain || row.domain || "",
-    decisionType: caseData.decision_type || row.decision_type || "",
-    riskLevel: caseData.risk_level || row.risk_level || "",
-    seedQuality: caseData.seed_quality || row.seed_quality || "",
-    userDecision: caseData.user_decision || row.user_decision || caseData.key_user_decision || "",
-    assistantRole: caseData.assistant_role || row.assistant_role || "",
+    source,
+    conversationId: firstPresent(caseData.conversation_id, caseData.conversationId, conversation?.conversation_id, conversation?.conversationId, row.conversation_id, row.conversationId, ""),
+    domain: normalizeLabel(domain),
+    decisionType: normalizeLabel(decisionType),
+    riskLevel: firstPresent(caseData.risk_level, caseData.riskLevel, row.risk_level, row.riskLevel, screening.risk_level, screening.riskLevel, ""),
+    seedQuality: firstPresent(caseData.seed_quality, caseData.seedQuality, row.seed_quality, row.seedQuality, screening.candidate_seed_quality, screening.seed_quality, ""),
+    userDecision: firstPresent(caseData.user_decision, row.user_decision, caseData.key_user_decision, screening.key_user_decision, row.key_user_decision, ""),
+    assistantRole: firstPresent(caseData.assistant_role, row.assistant_role, screening.assistant_role, ""),
+    importedFormat: inferRowFormat(row, conversation),
     turns,
   };
 }
 
+function extractTurns(row, caseData, conversation) {
+  const parsedConversation = parseMaybeJson(conversation);
+  const candidates = [
+    parsedConversation?.turns,
+    parsedConversation?.messages,
+    parsedConversation?.conversations,
+    Array.isArray(parsedConversation) ? parsedConversation : null,
+    parseMaybeJson(row.conversations),
+    parseMaybeJson(row.messages),
+    parseMaybeJson(row.turns),
+    parseMaybeJson(row.chat),
+    parseMaybeJson(caseData.turns),
+    parseMaybeJson(caseData.messages),
+  ];
+
+  for (const candidate of candidates) {
+    const turns = normalizeTurns(candidate || []);
+    if (turns.length) return mergeAdjacentSameRole(turns);
+  }
+
+  const textTurns = parseConversationText(firstPresent(
+    row.conversation_text,
+    row.conversationText,
+    caseData.conversation_text,
+    caseData.conversationText,
+    typeof parsedConversation === "string" ? parsedConversation : "",
+  ));
+  if (textTurns.length) return mergeAdjacentSameRole(textTurns);
+
+  const prompt = firstPresent(row.prompt, row.instruction, row.input, caseData.prompt, caseData.instruction, "");
+  const response = firstPresent(row.response, row.output, row.answer, caseData.response, caseData.output, "");
+  if (prompt && response) {
+    return [
+      { role: "user", content: cleanText(prompt) },
+      { role: "assistant", content: cleanText(response) },
+    ].filter((turn) => turn.content);
+  }
+
+  return [];
+}
+
 function normalizeTurns(turns) {
+  if (!Array.isArray(turns)) return [];
   return turns
     .map((turn) => ({
       role: normalizeRole(turn.role || turn.speaker || turn.from),
-      content: String(turn.content || turn.text || turn.value || "").trim(),
+      content: cleanText(turn.content || turn.text || turn.value || turn.message || ""),
     }))
     .filter((turn) => turn.role && turn.content);
 }
@@ -264,8 +380,89 @@ function normalizeTurns(turns) {
 function normalizeRole(role) {
   const value = String(role || "").toLowerCase();
   if (value.includes("assistant") || value === "gpt" || value === "bot") return "assistant";
-  if (value.includes("user") || value === "human") return "user";
+  if (value.includes("user") || value === "human" || value === "prompter") return "user";
   return "";
+}
+
+function parseMaybeJson(value) {
+  if (typeof value !== "string") return value;
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return value;
+  try {
+    return JSON.parse(trimmed);
+  } catch (error) {
+    return value;
+  }
+}
+
+function firstPresent(...values) {
+  return values.find((value) => value !== undefined && value !== null && value !== "") ?? "";
+}
+
+function objectOrFallback(value, fallback) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : fallback;
+}
+
+function cleanText(value) {
+  return String(value || "")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p\s*>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/[ \t\f\v]+/g, " ")
+    .replace(/\s*\n\s*/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function normalizeLabel(value) {
+  return String(value || "").replace(/_/g, " ").trim();
+}
+
+function inferSourceFromFilename(filename) {
+  const lower = String(filename || "").toLowerCase();
+  if (lower.includes("wildchat")) return "WildChat";
+  if (lower.includes("sharegpt")) return "ShareGPT";
+  return filename ? filename.replace(/\.[^.]+$/, "") : "dataset";
+}
+
+function inferRowFormat(row, conversation) {
+  if (row.case && row.screening && row.conversation) return "retained_full_context";
+  if (Array.isArray(conversation?.turns)) return "conversation.turns";
+  if (row.conversations) return "sharegpt_conversations";
+  if (row.messages) return "openai_messages";
+  if (row.conversation_text || row.conversationText) return "conversation_text";
+  if ((row.prompt || row.instruction || row.input) && (row.response || row.output || row.answer)) return "prompt_response";
+  return "unknown";
+}
+
+function parseConversationText(text) {
+  const raw = cleanText(text);
+  if (!raw) return [];
+  const matches = Array.from(raw.matchAll(/\b(USER|ASSISTANT|HUMAN|GPT|CHATGPT|BOT)\s*:\s*/gi));
+  if (!matches.length) return [];
+
+  const turns = [];
+  for (let index = 0; index < matches.length; index += 1) {
+    const match = matches[index];
+    const next = matches[index + 1];
+    const role = normalizeRole(match[1]);
+    const content = raw.slice(match.index + match[0].length, next?.index ?? raw.length).trim();
+    if (role && content) turns.push({ role, content });
+  }
+  return turns;
+}
+
+function mergeAdjacentSameRole(turns) {
+  const merged = [];
+  for (const turn of turns) {
+    if (merged.length && merged[merged.length - 1].role === turn.role) {
+      merged[merged.length - 1].content = `${merged[merged.length - 1].content}\n\n${turn.content}`;
+    } else {
+      merged.push({ ...turn });
+    }
+  }
+  return merged;
 }
 
 function renderStats() {

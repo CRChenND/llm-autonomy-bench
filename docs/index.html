@@ -37,10 +37,10 @@
 
         <section class="panel">
           <h2>Import Cases</h2>
-          <label for="caseFileInput">JSON or JSONL</label>
-          <input id="caseFileInput" type="file" accept=".json,.jsonl,application/json" />
+          <label for="caseFileInput">Dataset file</label>
+          <input id="caseFileInput" type="file" accept=".json,.jsonl,.ndjson,.csv,application/json,text/csv" />
           <button id="importBtn" type="button" disabled>Import to Firestore</button>
-          <p class="hint">Supports retained full-context rows with <code>conversation.turns</code>, raw <code>turns</code>, or OpenAI-style messages.</p>
+          <p class="hint">Supports WildChat retained full-context JSONL, ShareGPT/OpenAI messages, prompt-response rows, conversation text, and CSV.</p>
         </section>
 
         <section class="panel">

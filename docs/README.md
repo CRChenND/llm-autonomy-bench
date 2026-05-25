@@ -7,7 +7,7 @@ This is a buildless static web app for turn-level annotation of reflective auton
 - Background anonymous connection through Firebase Authentication
 - Shared Firestore project workspace for multiple annotators
 - Annotator ID field for retrieving the same annotator's saved work across sessions
-- JSON/JSONL case import from retained conversation exports
+- JSON, JSONL, NDJSON, and CSV case import from retained conversation exports
 - Turn-level coding for `Rt`, `Ct`, `Vt`, `Gt`, `It`, `Mt`, and `At+1`
 - Conversation-level mechanism, confidence, voluntary transfer, and reflective erosion flags
 - Firestore save/load per annotator
@@ -75,9 +75,13 @@ annotationProjects/{projectId}/annotations/{caseId}_{annotatorId}
 The import flow accepts rows with any of these common shapes:
 
 - `conversation.turns`
+- WildChat retained full-context rows with `case`, `screening`, and `conversation.turns`
+- ShareGPT-style `conversations` arrays with `from`/`value`
+- OpenAI-style `messages` arrays with `role`/`content`
 - `case.turns`
 - root-level `turns`
-- root-level OpenAI-style `messages`
+- prompt-response rows with `prompt`/`response`, `instruction`/`output`, or `input`/`answer`
+- transcript rows with `conversation_text` containing `USER:` and `ASSISTANT:` markers
 
 Each turn should contain a recognizable role (`user`, `assistant`, `human`, `gpt`) and text/content.
 
