@@ -78,8 +78,15 @@
               </div>
             </div>
 
+            <div id="turnContainer" class="turns"></div>
+
+            <section class="panel notes-panel">
+              <h2>Notes</h2>
+              <textarea id="globalNotes" rows="5" placeholder="Boundary issues, preference shifts, adjudication notes..."></textarea>
+            </section>
+
             <div class="annotation-summary">
-              <label for="overallMechanism">Overall primary mechanism</label>
+              <label id="overallMechanismLabel" for="overallMechanism">Overall primary mechanism</label>
               <select id="overallMechanism">
                 <option value="">Uncoded</option>
                 <option value="GP">GP - Gradual persuasion</option>
@@ -101,13 +108,6 @@
               <label class="checkline"><input id="voluntaryTransfer" type="checkbox" /> Voluntary agency transfer</label>
               <label class="checkline"><input id="reflectiveErosion" type="checkbox" /> Reflective erosion evidence</label>
             </div>
-
-            <div id="turnContainer" class="turns"></div>
-
-            <section class="panel notes-panel">
-              <h2>Notes</h2>
-              <textarea id="globalNotes" rows="5" placeholder="Boundary issues, preference shifts, adjudication notes..."></textarea>
-            </section>
           </section>
         </section>
 

@@ -37,8 +37,8 @@ button {
   border: 1px solid var(--accent);
   background: var(--accent);
   color: #fff;
-  min-height: 36px;
-  padding: 0 14px;
+  min-height: 40px;
+  padding: 0 16px;
   border-radius: 6px;
   cursor: pointer;
 }
@@ -116,6 +116,10 @@ code {
   align-items: center;
 }
 
+.case-actions > select {
+  min-width: 180px;
+}
+
 .status-pill,
 .role-pill,
 .save-state {
@@ -184,6 +188,11 @@ code {
   display: flex;
   gap: 8px;
   margin-bottom: 14px;
+}
+
+.tab-btn {
+  min-height: 40px;
+  padding: 0 18px;
 }
 
 .tab-btn.active {
@@ -391,8 +400,8 @@ code {
 }
 
 .inline-btn {
-  min-height: 30px;
-  padding: 0 10px;
+  min-height: 34px;
+  padding: 0 12px;
 }
 
 .case-list {
@@ -490,8 +499,9 @@ code {
   grid-template-columns: repeat(4, minmax(160px, 1fr));
   gap: 10px;
   align-items: end;
-  padding: 14px 0;
-  border-bottom: 1px solid var(--border);
+  padding: 18px 0 0;
+  margin-top: 18px;
+  border-top: 1px solid var(--border);
 }
 
 .checkline {
@@ -630,7 +640,7 @@ code {
   position: absolute;
   left: 0;
   top: calc(100% + 8px);
-  z-index: 2;
+  z-index: 9999;
   width: min(420px, 56vw);
   max-width: calc(100vw - 32px);
   padding: 10px 11px;
@@ -649,15 +659,27 @@ code {
   transition: opacity 120ms ease, transform 120ms ease;
 }
 
-.tooltip-wrap:hover .tooltip-bubble,
-.tooltip-wrap:focus-within .tooltip-bubble {
+.tooltip-bubble-wide {
+  width: min(460px, 60vw);
+}
+
+.tooltip-wrap.is-open .tooltip-bubble {
   opacity: 1;
   transform: translateY(0);
 }
 
-.tooltip-wrap:hover .tooltip-trigger,
-.tooltip-wrap:focus-within .tooltip-trigger {
+.tooltip-wrap.is-open .tooltip-trigger {
   z-index: 0;
+}
+
+.tooltip-wrap[data-placement~="left"] .tooltip-bubble {
+  left: auto;
+  right: 0;
+}
+
+.tooltip-wrap[data-placement~="top"] .tooltip-bubble {
+  top: auto;
+  bottom: calc(100% + 8px);
 }
 
 .field-hint {
