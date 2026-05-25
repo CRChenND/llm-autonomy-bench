@@ -21,7 +21,7 @@ This is a buildless static web app for turn-level annotation of reflective auton
 5. Apply rules based on `firebase-rules.example`.
 6. Create a web app in Firebase and copy its config object.
 
-This repository currently includes a default Firebase web config for the `llm-autonomy` Firebase project. To use a different Firebase project, paste its config JSON into the app's Firebase panel:
+Paste the config JSON into the app's Firebase panel:
 
 ```json
 {
@@ -34,7 +34,7 @@ This repository currently includes a default Firebase web config for the `llm-au
 }
 ```
 
-The Firebase web config is not a secret. Access control should be enforced with Firebase Auth and Firestore rules.
+The Firebase web config is not a server secret, but GitHub secret scanning may flag API-key-shaped values. Keep project configs out of committed source files and share them with annotators through a separate setup channel. Access control should be enforced with Firebase Auth and Firestore rules.
 
 If the app is open to unfamiliar annotators, do not rely on hidden UI controls for protection. Firestore rules should enforce who can import cases, read annotations, and write annotations.
 

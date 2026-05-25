@@ -50,16 +50,6 @@ const els = {
   turnTemplate: document.querySelector("#turnTemplate"),
 };
 
-const DEFAULT_FIREBASE_CONFIG = {
-  apiKey: "AIzaSyAo90wjnTpAPOwJ1GpIsXkTtoKqoRyYDDM",
-  authDomain: "llm-autonomy.firebaseapp.com",
-  projectId: "llm-autonomy",
-  storageBucket: "llm-autonomy.firebasestorage.app",
-  messagingSenderId: "885044477276",
-  appId: "1:885044477276:web:c4917b43f25af8a40b1599",
-  measurementId: "G-SQRQDPE3NC",
-};
-
 const scoreOptions = [
   ["", "Blank"],
   ["0", "0"],
@@ -89,7 +79,7 @@ const state = {
 };
 
 els.projectIdInput.value = state.projectId;
-els.firebaseConfigInput.value = localStorage.getItem("rae.firebaseConfig") || JSON.stringify(DEFAULT_FIREBASE_CONFIG, null, 2);
+els.firebaseConfigInput.value = localStorage.getItem("rae.firebaseConfig") || "";
 
 wireEvents();
 tryInitializeFirebase();
