@@ -13,29 +13,18 @@
         <p>Turn-level RAE coding for multi-turn decision-support conversations.</p>
       </div>
       <div class="auth-panel">
-        <span id="authStatus" class="status-pill">Not connected</span>
-        <button id="signInBtn" type="button">Sign in</button>
-        <button id="signOutBtn" type="button" class="secondary" disabled>Sign out</button>
+        <span id="authStatus" class="status-pill">Connecting</span>
       </div>
     </header>
 
     <main class="layout">
       <aside class="sidebar">
         <section class="panel">
-          <h2>Firebase</h2>
-          <label for="firebaseConfigInput">Web app config JSON</label>
-          <textarea id="firebaseConfigInput" rows="8" spellcheck="false" placeholder='{"apiKey":"...","authDomain":"...","projectId":"..."}'></textarea>
-          <div class="button-row">
-            <button id="saveConfigBtn" type="button">Save config</button>
-            <button id="clearConfigBtn" type="button" class="secondary">Clear</button>
-          </div>
-          <p class="hint">Firebase web config is not a secret. Restrict access with Auth and Firestore rules.</p>
-        </section>
-
-        <section class="panel">
           <h2>Project</h2>
           <label for="projectIdInput">Project ID</label>
           <input id="projectIdInput" type="text" value="pilot-v1" />
+          <label for="annotatorIdInput">Your annotator ID</label>
+          <input id="annotatorIdInput" type="text" placeholder="e.g. alice, coder-01" />
           <div class="button-row">
             <button id="loadProjectBtn" type="button">Load project</button>
             <button id="exportBtn" type="button" class="secondary" disabled>Export</button>
@@ -66,7 +55,7 @@
       <section class="workspace">
         <section id="emptyState" class="empty-state">
           <h2>Select or import a case</h2>
-          <p>Load a Firebase project, import retained cases, then choose a conversation to annotate.</p>
+          <p>Import retained cases or choose an existing conversation to annotate.</p>
         </section>
 
         <section id="caseWorkspace" class="case-workspace hidden">

@@ -1,10 +1,8 @@
 import { getApp, getApps, initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
 import {
   getAuth,
-  GoogleAuthProvider,
   onAuthStateChanged,
-  signInWithPopup,
-  signOut,
+  signInAnonymously,
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
 import {
   collection,
@@ -20,12 +18,8 @@ import {
 
 const els = {
   authStatus: document.querySelector("#authStatus"),
-  signInBtn: document.querySelector("#signInBtn"),
-  signOutBtn: document.querySelector("#signOutBtn"),
-  firebaseConfigInput: document.querySelector("#firebaseConfigInput"),
-  saveConfigBtn: document.querySelector("#saveConfigBtn"),
-  clearConfigBtn: document.querySelector("#clearConfigBtn"),
   projectIdInput: document.querySelector("#projectIdInput"),
+  annotatorIdInput: document.querySelector("#annotatorIdInput"),
   loadProjectBtn: document.querySelector("#loadProjectBtn"),
   exportBtn: document.querySelector("#exportBtn"),
   projectStats: document.querySelector("#projectStats"),
@@ -72,27 +66,23 @@ const state = {
   auth: null,
   db: null,
   user: null,
+  firebaseConfig: null,
   projectId: localStorage.getItem("rae.projectId") || "pilot-v1",
+  annotatorId: localStorage.getItem("rae.annotatorId") || "",
   cases: [],
   annotations: new Map(),
   activeCaseId: null,
 };
 
 els.projectIdInput.value = state.projectId;
+els.annotatorIdInput.value = state.annotatorId;
 
 await bootstrapConfig();
 wireEvents();
 tryInitializeFirebase();
 
 async function bootstrapConfig() {
-  const savedConfig = localStorage.getItem("rae.firebaseConfig");
-  if (savedConfig) {
-    els.firebaseConfigInput.value = savedConfig;
-    return;
-  }
-
-  const deployedConfig = await loadDeployedFirebaseConfig();
-  els.firebaseConfigInput.value = deployedConfig ? JSON.stringify(deployedConfig, null, 2) : "";
+  state.firebaseConfig = await loadDeployedFirebaseConfig();
 }
 
 async function loadDeployedFirebaseConfig() {
@@ -105,24 +95,13 @@ async function loadDeployedFirebaseConfig() {
 }
 
 function wireEvents() {
-  els.saveConfigBtn.addEventListener("click", () => {
-    localStorage.setItem("rae.firebaseConfig", els.firebaseConfigInput.value.trim());
-    tryInitializeFirebase(true);
-  });
-
-  els.clearConfigBtn.addEventListener("click", () => {
-    localStorage.removeItem("rae.firebaseConfig");
-    els.firebaseConfigInput.value = "";
-    setAuthStatus("Not connected", false);
-  });
-
-  els.signInBtn.addEventListener("click", signIn);
-  els.signOutBtn.addEventListener("click", () => state.auth && signOut(state.auth));
-
   els.loadProjectBtn.addEventListener("click", async () => {
     state.projectId = sanitizeProjectId(els.projectIdInput.value);
+    state.annotatorId = sanitizeAnnotatorId(els.annotatorIdInput.value);
     els.projectIdInput.value = state.projectId;
+    els.annotatorIdInput.value = state.annotatorId;
     localStorage.setItem("rae.projectId", state.projectId);
+    localStorage.setItem("rae.annotatorId", state.annotatorId);
     await loadProject();
   });
 
@@ -134,47 +113,50 @@ function wireEvents() {
 
 function tryInitializeFirebase(force = false) {
   if (state.app && !force) return;
-  const rawConfig = els.firebaseConfigInput.value.trim();
-  if (!rawConfig) {
-    setAuthStatus("Add Firebase config", false);
+  if (!state.firebaseConfig) {
+    setAuthStatus("Firebase config missing", false);
     return;
   }
 
   try {
-    const config = JSON.parse(rawConfig);
-    state.app = getApps().length ? getApp() : initializeApp(config);
+    state.app = getApps().length ? getApp() : initializeApp(state.firebaseConfig);
     state.auth = getAuth(state.app);
     state.db = getFirestore(state.app);
-    els.signInBtn.disabled = false;
-    els.importBtn.disabled = false;
-    setAuthStatus("Firebase ready", true);
+    setAuthStatus("Connecting", false);
 
     onAuthStateChanged(state.auth, async (user) => {
+      if (!user) {
+        await signInAnonymously(state.auth);
+        return;
+      }
       state.user = user;
-      els.signOutBtn.disabled = !user;
-      els.saveAnnotationBtn.disabled = !user || !state.activeCaseId;
-      els.exportBtn.disabled = !user;
-      setAuthStatus(user ? user.displayName || user.email || "Signed in" : "Signed out", Boolean(user));
-      if (user) await loadProject();
+      if (!state.annotatorId) {
+        state.annotatorId = `anon-${user.uid.slice(0, 8)}`;
+        els.annotatorIdInput.value = state.annotatorId;
+        localStorage.setItem("rae.annotatorId", state.annotatorId);
+      }
+      els.importBtn.disabled = false;
+      els.saveAnnotationBtn.disabled = !state.activeCaseId;
+      els.exportBtn.disabled = false;
+      setAuthStatus(`Annotator: ${state.annotatorId}`, true);
+      await loadProject();
     });
   } catch (error) {
     console.error(error);
-    setAuthStatus("Invalid config", false);
-    alert(`Firebase config error: ${error.message}`);
+    setAuthStatus("Firebase unavailable", false);
+    alert(`Firebase startup error: ${error.message}`);
   }
-}
-
-async function signIn() {
-  if (!state.auth) {
-    alert("Save a Firebase config first.");
-    return;
-  }
-  const provider = new GoogleAuthProvider();
-  await signInWithPopup(state.auth, provider);
 }
 
 async function loadProject() {
   if (!state.db || !state.user) return;
+  state.projectId = sanitizeProjectId(els.projectIdInput.value);
+  state.annotatorId = sanitizeAnnotatorId(els.annotatorIdInput.value || state.annotatorId);
+  els.projectIdInput.value = state.projectId;
+  els.annotatorIdInput.value = state.annotatorId;
+  localStorage.setItem("rae.projectId", state.projectId);
+  localStorage.setItem("rae.annotatorId", state.annotatorId);
+
   const casesRef = collection(state.db, "annotationProjects", state.projectId, "cases");
   const annotationsRef = collection(state.db, "annotationProjects", state.projectId, "annotations");
   const [caseSnap, annotationSnap] = await Promise.all([
@@ -186,7 +168,9 @@ async function loadProject() {
   state.annotations = new Map();
   for (const item of annotationSnap.docs) {
     const data = item.data();
-    if (data.annotatorUid === state.user.uid) state.annotations.set(data.caseId, data);
+    if (data.annotatorId === state.annotatorId || (!data.annotatorId && data.annotatorUid === state.user.uid)) {
+      state.annotations.set(data.caseId, data);
+    }
   }
 
   renderStats();
@@ -199,7 +183,7 @@ async function loadProject() {
 
 async function importCases() {
   if (!state.db || !state.user) {
-    alert("Sign in before importing.");
+    alert("Firebase is still connecting. Try again in a moment.");
     return;
   }
   const file = els.caseFileInput.files?.[0];
@@ -409,14 +393,18 @@ function addSelect(parent, key, label, options, value) {
 
 async function saveAnnotation() {
   if (!state.db || !state.user || !state.activeCaseId) return;
+  state.annotatorId = sanitizeAnnotatorId(els.annotatorIdInput.value || state.annotatorId);
+  els.annotatorIdInput.value = state.annotatorId;
+  localStorage.setItem("rae.annotatorId", state.annotatorId);
+  setAuthStatus(`Annotator: ${state.annotatorId}`, true);
   const caseItem = state.cases.find((item) => item.caseId === state.activeCaseId);
   const annotation = collectAnnotation(caseItem);
-  const annotationId = `${state.activeCaseId}_${state.user.uid}`;
+  const annotationId = `${state.activeCaseId}_${sanitizeDocId(state.annotatorId)}`;
   const ref = doc(state.db, "annotationProjects", state.projectId, "annotations", annotationId);
   await setDoc(ref, {
     ...annotation,
+    annotatorId: state.annotatorId,
     annotatorUid: state.user.uid,
-    annotatorName: state.user.displayName || state.user.email || "",
     updatedAt: serverTimestamp(),
   }, { merge: true });
   state.annotations.set(state.activeCaseId, annotation);
@@ -476,6 +464,10 @@ function setAuthStatus(text, ready) {
 
 function sanitizeProjectId(value) {
   return sanitizeDocId(value || "pilot-v1");
+}
+
+function sanitizeAnnotatorId(value) {
+  return String(value || "").trim().replace(/\s+/g, "-").slice(0, 80) || "annotator";
 }
 
 function sanitizeDocId(value) {

@@ -4,8 +4,9 @@ This is a buildless static web app for turn-level annotation of reflective auton
 
 ## Features
 
-- Google sign-in through Firebase Authentication
+- Background anonymous connection through Firebase Authentication
 - Shared Firestore project workspace for multiple annotators
+- Annotator ID field for retrieving the same annotator's saved work across sessions
 - JSON/JSONL case import from retained conversation exports
 - Turn-level coding for `Rt`, `Ct`, `Vt`, `Gt`, `It`, `Mt`, and `At+1`
 - Conversation-level mechanism, confidence, voluntary transfer, and reflective erosion flags
@@ -15,7 +16,7 @@ This is a buildless static web app for turn-level annotation of reflective auton
 ## Firebase Setup
 
 1. Create a Firebase project.
-2. Enable **Authentication > Sign-in method > Google**.
+2. Enable **Authentication > Sign-in method > Anonymous**.
 3. Enable **Firestore Database**.
 4. Add your GitHub Pages domain to **Authentication > Settings > Authorized domains**.
 5. Apply rules based on `firebase-rules.example`.
@@ -44,11 +45,13 @@ Use strict JSON, without `const firebaseConfig =`:
 
 The deployment workflow generates `docs/firebase-config.js` during the Pages build. That generated file is not committed to the repository.
 
-For local development, either paste the config JSON into the app's Firebase panel or create a local, ignored file at `docs/firebase-config.js` based on `docs/firebase-config.example.js`.
+For local development, create a local, ignored file at `docs/firebase-config.js` based on `docs/firebase-config.example.js`.
 
 The Firebase web config is not a server secret, but GitHub secret scanning may flag API-key-shaped values. Keep project configs out of committed source files. Access control should be enforced with Firebase Auth and Firestore rules.
 
 If the app is open to unfamiliar annotators, do not rely on hidden UI controls for protection. Firestore rules should enforce who can import cases, read annotations, and write annotations.
+
+Anonymous Auth is only a lightweight Firebase session. The app stores a user-entered `annotatorId` on each annotation so annotators can retrieve their existing labels by entering the same ID later. This is convenient for open annotation, but it is not a strong identity system: anyone who knows an annotator ID could attempt to use that ID. Use Google, email, or another real sign-in method if annotator identity needs to be protected.
 
 ## GitHub Pages Deployment
 
@@ -66,7 +69,7 @@ Firestore paths:
 
 ```text
 annotationProjects/{projectId}/cases/{caseId}
-annotationProjects/{projectId}/annotations/{caseId}_{annotatorUid}
+annotationProjects/{projectId}/annotations/{caseId}_{annotatorId}
 ```
 
 The import flow accepts rows with any of these common shapes:
@@ -81,8 +84,10 @@ Each turn should contain a recognizable role (`user`, `assistant`, `human`, `gpt
 ## Recommended Workflow
 
 1. Export or prepare a pilot set as JSONL.
-2. Load the annotation app and sign in.
+2. Load the annotation app.
 3. Set a shared project ID, such as `pilot-v1`.
-4. One project owner imports the cases.
-5. Each annotator signs in, loads the same project ID, and annotates independently.
-6. Export annotations for adjudication and reliability analysis.
+4. Enter your own annotator ID, such as `coder-01`.
+5. One project owner imports the cases.
+6. Each annotator loads the same project ID, enters their own annotator ID, and annotates independently.
+7. To retrieve existing work, reload the same project with the same annotator ID.
+8. Export annotations for adjudication and reliability analysis.
