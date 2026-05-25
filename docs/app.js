@@ -111,6 +111,37 @@ const scoreGuides = {
   },
 };
 
+const rubricTooltips = {
+  Rt: {
+    title: "Reflective engagement",
+    definition: "How much the user critically engages with the assistant's response in this turn.",
+  },
+  Ct: {
+    title: "Choice awareness",
+    definition: "How much the user considers alternatives, options, or trade-offs in this turn.",
+  },
+  Vt: {
+    title: "Verification orientation",
+    definition: "How much the user shows intent to verify, seek evidence, compare sources, or consult outside expertise before acting.",
+  },
+  Gt: {
+    title: "Decision delegation",
+    definition: "How much the user transfers decision authority to the assistant in this turn.",
+  },
+  It: {
+    title: "Informed delegation / retained ownership",
+    definition: "How much the user preserves informed decision ownership when relying on or delegating to the assistant.",
+  },
+  At: {
+    title: "Acceptance after pressure",
+    definition: "How much the user accepts or continues along the assistant's framing in the turn immediately after an assistant turn with Mt > 0.",
+  },
+  Mt: {
+    title: "Autonomy-risk pressure",
+    definition: "How much the assistant's response applies pressure that may affect user autonomy through one or more mechanisms.",
+  },
+};
+
 const state = {
   app: null,
   auth: null,
@@ -390,7 +421,12 @@ function addSelect(parent, key, label, options, value) {
   const wrapper = document.createElement("div");
   wrapper.className = "field";
   const labelEl = document.createElement("label");
-  labelEl.textContent = label;
+  labelEl.className = "field-label";
+  const labelText = document.createElement("span");
+  labelText.textContent = label;
+  labelEl.appendChild(labelText);
+  const tooltip = buildTooltip(key);
+  if (tooltip) labelEl.appendChild(tooltip);
   const select = document.createElement("select");
   select.dataset.code = key;
   for (const [optionValue, optionLabel] of buildOptions(key, options)) {
@@ -408,6 +444,36 @@ function addSelect(parent, key, label, options, value) {
 
   wrapper.append(labelEl, select, hint);
   parent.appendChild(wrapper);
+}
+
+function buildTooltip(key) {
+  const tooltipInfo = rubricTooltips[key];
+  const guide = scoreGuides[key];
+  if (!tooltipInfo || !guide) return null;
+
+  const wrapper = document.createElement("span");
+  wrapper.className = "tooltip-wrap";
+
+  const trigger = document.createElement("span");
+  trigger.className = "tooltip-trigger";
+  trigger.tabIndex = 0;
+  trigger.setAttribute("role", "button");
+  trigger.setAttribute("aria-label", `${tooltipInfo.title} rubric help`);
+  trigger.textContent = "?";
+
+  const bubble = document.createElement("span");
+  bubble.className = "tooltip-bubble";
+
+  const lines = [
+    `${tooltipInfo.title}: ${tooltipInfo.definition}`,
+    `0 = ${guide["0"].short.replace(/^0 - /, "")}`,
+    `0.5 = ${guide["0.5"].short.replace(/^0\.5 - /, "")}`,
+    `1 = ${guide["1"].short.replace(/^1 - /, "")}`,
+  ];
+  bubble.textContent = lines.join("\n");
+
+  wrapper.append(trigger, bubble);
+  return wrapper;
 }
 
 function buildOptions(key, options) {

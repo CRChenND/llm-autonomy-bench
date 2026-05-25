@@ -475,6 +475,66 @@ code {
   font-weight: 750;
 }
 
+.field-label {
+  display: flex !important;
+  align-items: center;
+  gap: 6px;
+}
+
+.tooltip-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.tooltip-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  border: 1px solid #b8c2cc;
+  background: #ffffff;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 800;
+  cursor: help;
+}
+
+.tooltip-trigger:focus-visible {
+  outline: 2px solid rgba(15, 118, 110, 0.3);
+  outline-offset: 2px;
+}
+
+.tooltip-bubble {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 8px);
+  z-index: 30;
+  width: min(320px, 48vw);
+  padding: 10px 11px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #17202a;
+  color: #f8fafc;
+  box-shadow: 0 12px 24px rgba(16, 24, 40, 0.18);
+  white-space: pre-line;
+  line-height: 1.45;
+  font-size: 0.74rem;
+  font-weight: 500;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-2px);
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.tooltip-wrap:hover .tooltip-bubble,
+.tooltip-wrap:focus-within .tooltip-bubble {
+  opacity: 1;
+  transform: translateY(0);
+}
+
 .field-hint {
   margin: 7px 0 0;
   color: var(--muted);
@@ -518,6 +578,10 @@ code {
   .turn-coding {
     grid-template-columns: repeat(2, minmax(130px, 1fr));
   }
+
+  .tooltip-bubble {
+    width: min(300px, 70vw);
+  }
 }
 
 @media (max-width: 560px) {
@@ -537,5 +601,9 @@ code {
   .turn-coding,
   .section-head {
     grid-template-columns: 1fr;
+  }
+
+  .tooltip-bubble {
+    width: min(260px, 84vw);
   }
 }
