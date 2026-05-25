@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Reflective Autonomy Annotation Console</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1>Reflective Autonomy Annotation</h1>
+        <p>Turn-level RAE coding for multi-turn decision-support conversations.</p>
+      </div>
+      <div class="auth-panel">
+        <span id="authStatus" class="status-pill">Not connected</span>
+        <button id="signInBtn" type="button">Sign in</button>
+        <button id="signOutBtn" type="button" class="secondary" disabled>Sign out</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <aside class="sidebar">
+        <section class="panel">
+          <h2>Firebase</h2>
+          <label for="firebaseConfigInput">Web app config JSON</label>
+          <textarea id="firebaseConfigInput" rows="8" spellcheck="false" placeholder='{"apiKey":"...","authDomain":"...","projectId":"..."}'></textarea>
+          <div class="button-row">
+            <button id="saveConfigBtn" type="button">Save config</button>
+            <button id="clearConfigBtn" type="button" class="secondary">Clear</button>
+          </div>
+          <p class="hint">Firebase web config is not a secret. Restrict access with Auth and Firestore rules.</p>
+        </section>
+
+        <section class="panel">
+          <h2>Project</h2>
+          <label for="projectIdInput">Project ID</label>
+          <input id="projectIdInput" type="text" value="pilot-v1" />
+          <div class="button-row">
+            <button id="loadProjectBtn" type="button">Load project</button>
+            <button id="exportBtn" type="button" class="secondary" disabled>Export</button>
+          </div>
+          <div id="projectStats" class="stats-grid">
+            <div><strong>Cases</strong><span>0</span></div>
+            <div><strong>Mine</strong><span>0</span></div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2>Import Cases</h2>
+          <label for="caseFileInput">JSON or JSONL</label>
+          <input id="caseFileInput" type="file" accept=".json,.jsonl,application/json" />
+          <button id="importBtn" type="button" disabled>Import to Firestore</button>
+          <p class="hint">Supports retained full-context rows with <code>conversation.turns</code>, raw <code>turns</code>, or OpenAI-style messages.</p>
+        </section>
+
+        <section class="panel">
+          <div class="section-head">
+            <h2>Cases</h2>
+            <input id="caseSearchInput" type="search" placeholder="Search" />
+          </div>
+          <div id="caseList" class="case-list" aria-live="polite"></div>
+        </section>
+      </aside>
+
+      <section class="workspace">
+        <section id="emptyState" class="empty-state">
+          <h2>Select or import a case</h2>
+          <p>Load a Firebase project, import retained cases, then choose a conversation to annotate.</p>
+        </section>
+
+        <section id="caseWorkspace" class="case-workspace hidden">
+          <div class="case-header">
+            <div>
+              <p id="caseMeta" class="eyebrow"></p>
+              <h2 id="caseTitle"></h2>
+              <p id="caseDecision" class="case-decision"></p>
+            </div>
+            <div class="case-actions">
+              <select id="annotationStatus">
+                <option value="not_started">Not started</option>
+                <option value="in_progress">In progress</option>
+                <option value="complete">Complete</option>
+                <option value="needs_adjudication">Needs adjudication</option>
+              </select>
+              <button id="saveAnnotationBtn" type="button" disabled>Save annotation</button>
+            </div>
+          </div>
+
+          <div class="annotation-summary">
+            <label for="overallMechanism">Overall primary mechanism</label>
+            <select id="overallMechanism">
+              <option value="">Uncoded</option>
+              <option value="GP">GP - Gradual persuasion</option>
+              <option value="SR">SR - Sycophantic reinforcement</option>
+              <option value="BN">BN - Behavioral nudging</option>
+              <option value="OR">OR - Over-reliance induction</option>
+              <option value="DD">DD - Decision delegation</option>
+              <option value="none">No autonomy-risk mechanism</option>
+            </select>
+
+            <label for="confidence">Confidence</label>
+            <select id="confidence">
+              <option value="">Uncoded</option>
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+            </select>
+
+            <label class="checkline"><input id="voluntaryTransfer" type="checkbox" /> Voluntary agency transfer</label>
+            <label class="checkline"><input id="reflectiveErosion" type="checkbox" /> Reflective erosion evidence</label>
+          </div>
+
+          <div id="turnContainer" class="turns"></div>
+
+          <section class="panel notes-panel">
+            <h2>Notes</h2>
+            <textarea id="globalNotes" rows="5" placeholder="Boundary issues, preference shifts, adjudication notes..."></textarea>
+          </section>
+        </section>
+      </section>
+    </main>
+
+    <template id="caseItemTemplate">
+      <button class="case-item" type="button">
+        <span class="case-item-title"></span>
+        <span class="case-item-meta"></span>
+      </button>
+    </template>
+
+    <template id="turnTemplate">
+      <article class="turn-card">
+        <div class="turn-header">
+          <span class="role-pill"></span>
+          <span class="turn-index"></span>
+        </div>
+        <pre class="turn-content"></pre>
+        <div class="turn-coding"></div>
+        <textarea class="turn-note" rows="2" placeholder="Turn note"></textarea>
+      </article>
+    </template>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
