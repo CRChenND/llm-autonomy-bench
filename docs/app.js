@@ -71,7 +71,7 @@ const mechanismOptions = [
 
 const assignmentConfig = {
   annotators: ["annotator-a", "annotator-b", "annotator-c"],
-  casesPerAnnotator: 100,
+  casesPerAnnotator: 20,
 };
 
 const scoreGuides = {
@@ -317,25 +317,31 @@ async function loadProject() {
     getDocs(annotationsRef),
   ]);
 
-  state.cases = caseSnap.docs.map((item) => item.data());
-  const assignments = buildAssignments(state.cases);
-  state.assignmentsByAnnotator = assignments.byAnnotator;
-  state.assignmentsByCase = assignments.byCase;
-  state.assignedCaseIds = assignments.byAnnotator.get(state.annotatorId) || new Set();
-  state.visibleCases = state.cases.filter((item) => state.assignedCaseIds.has(item.caseId));
   state.annotations = new Map();
   state.allAnnotationsByCase = new Map();
   state.annotationSignatures = new Map();
+  state.cases = caseSnap.docs.map((item) => item.data());
   for (const item of annotationSnap.docs) {
     const data = item.data();
     if (!state.allAnnotationsByCase.has(data.caseId)) {
       state.allAnnotationsByCase.set(data.caseId, new Map());
     }
     state.allAnnotationsByCase.get(data.caseId).set(data.annotatorId || data.annotatorUid || item.id, data);
-    const isMine = data.annotatorId === state.annotatorId || (!data.annotatorId && data.annotatorUid === state.user.uid);
-    if (isMine && state.assignedCaseIds.has(data.caseId)) {
-      state.annotations.set(data.caseId, data);
-      state.annotationSignatures.set(data.caseId, buildAnnotationSignature(data));
+  }
+
+  const assignments = buildAssignments(state.cases, state.allAnnotationsByCase);
+  state.assignmentsByAnnotator = assignments.byAnnotator;
+  state.assignmentsByCase = assignments.byCase;
+  state.assignedCaseIds = assignments.byAnnotator.get(state.annotatorId) || new Set();
+  state.visibleCases = state.cases.filter((item) => state.assignedCaseIds.has(item.caseId));
+
+  for (const annotationsForCase of state.allAnnotationsByCase.values()) {
+    for (const data of annotationsForCase.values()) {
+      const isMine = data.annotatorId === state.annotatorId || (!data.annotatorId && data.annotatorUid === state.user.uid);
+      if (isMine && state.assignedCaseIds.has(data.caseId)) {
+        state.annotations.set(data.caseId, data);
+        state.annotationSignatures.set(data.caseId, buildAnnotationSignature(data));
+      }
     }
   }
 
@@ -959,7 +965,7 @@ function sanitizeDocId(value) {
   return String(value).trim().replace(/[/?#[\].]/g, "_").slice(0, 180) || "case";
 }
 
-function buildAssignments(cases) {
+function buildAssignments(cases, existingAnnotationsByCase = new Map()) {
   const annotators = assignmentConfig.annotators.slice();
   const byAnnotator = new Map(annotators.map((id) => [id, new Set()]));
   const byCase = new Map();
@@ -977,22 +983,63 @@ function buildAssignments(cases) {
     orderedCases.length,
     Math.floor((annotators.length * assignmentConfig.casesPerAnnotator) / 2),
   );
-  const basePerPair = Math.floor(uniqueCasesNeeded / pairings.length);
-  const remainder = uniqueCasesNeeded % pairings.length;
-  let cursor = 0;
+  const caseIds = new Set(cases.map((item) => item.caseId));
+  const annotatedCaseIds = new Set(
+    [...existingAnnotationsByCase.keys()].filter((caseId) => caseIds.has(caseId)),
+  );
 
-  pairings.forEach((pair, index) => {
-    const pairCount = basePerPair + (index < remainder ? 1 : 0);
-    const slice = orderedCases.slice(cursor, cursor + pairCount);
-    cursor += pairCount;
-    for (const item of slice) {
-      byAnnotator.get(pair[0]).add(item.caseId);
-      byAnnotator.get(pair[1]).add(item.caseId);
-      byCase.set(item.caseId, pair.slice());
-    }
-  });
+  for (const item of orderedCases) {
+    if (!annotatedCaseIds.has(item.caseId)) continue;
+    assignCaseToPair(item.caseId, reviewerPairForExistingCase(item.caseId, existingAnnotationsByCase, byAnnotator, pairings), byAnnotator, byCase);
+  }
+
+  let pairingIndex = 0;
+  for (const item of orderedCases) {
+    if (byCase.size >= uniqueCasesNeeded) break;
+    if (byCase.has(item.caseId)) continue;
+    const pair = nextPairWithCapacity(pairings, byAnnotator, pairingIndex);
+    if (!pair) break;
+    pairingIndex = pairings.findIndex((candidate) => samePair(candidate, pair)) + 1;
+    assignCaseToPair(item.caseId, pair, byAnnotator, byCase);
+  }
 
   return { byAnnotator, byCase };
+}
+
+function reviewerPairForExistingCase(caseId, existingAnnotationsByCase, byAnnotator, pairings) {
+  const annotatedReviewers = assignmentConfig.annotators.filter((id) => existingAnnotationsByCase.get(caseId)?.has(id));
+  if (annotatedReviewers.length >= 2) return annotatedReviewers.slice(0, 2);
+  if (annotatedReviewers.length === 1) {
+    const reviewer = annotatedReviewers[0];
+    const pair = pairings
+      .filter((candidate) => candidate.includes(reviewer))
+      .find((candidate) => pairHasCapacity(candidate, byAnnotator));
+    if (pair) return pair;
+  }
+  return nextPairWithCapacity(pairings, byAnnotator, 0) || pairings[0];
+}
+
+function nextPairWithCapacity(pairings, byAnnotator, startIndex) {
+  for (let offset = 0; offset < pairings.length; offset += 1) {
+    const pair = pairings[(startIndex + offset) % pairings.length];
+    if (pairHasCapacity(pair, byAnnotator)) return pair;
+  }
+  return null;
+}
+
+function pairHasCapacity(pair, byAnnotator) {
+  return pair.every((id) => byAnnotator.get(id).size < assignmentConfig.casesPerAnnotator);
+}
+
+function assignCaseToPair(caseId, pair, byAnnotator, byCase) {
+  for (const id of pair) {
+    byAnnotator.get(id).add(caseId);
+  }
+  byCase.set(caseId, pair.slice());
+}
+
+function samePair(left, right) {
+  return left.length === right.length && left.every((id, index) => id === right[index]);
 }
 
 function hashText(text) {
