@@ -6,4 +6,3 @@ data/
 .env.*
 !.env.example
 .DS_Store
-docs/firebase-config.js
