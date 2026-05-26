@@ -419,12 +419,12 @@ function updateEmptyState() {
 
 function renderAssignmentsView() {
   els.assignmentScope.textContent = state.annotatorId
-    ? `Assignments for ${state.annotatorId}`
-    : "No annotator loaded";
+    ? `Project assignments · signed in as ${state.annotatorId}`
+    : "Project assignments";
   const statsSpans = els.assignmentStats.querySelectorAll("span");
-  const rows = state.visibleCases.map((item) => buildAssignmentRow(item));
-  const completedCount = rows.filter((row) => row.mineStatus === "complete").length;
-  const needSecondPassCount = rows.filter((row) => row.missingReviewer || row.mineStatus !== "complete").length;
+  const rows = projectAssignmentCases().map((item) => buildAssignmentRow(item));
+  const completedCount = rows.filter((row) => row.projectStatus === "complete").length;
+  const needSecondPassCount = rows.filter((row) => row.projectStatus !== "complete").length;
   const disagreementCount = rows.filter((row) => row.disagreement === "disagreement").length;
   statsSpans[0].textContent = String(rows.length);
   statsSpans[1].textContent = String(completedCount);
@@ -443,7 +443,7 @@ function renderAssignmentsView() {
     ).join("");
 
     const statusCell = document.createElement("td");
-    statusCell.innerHTML = `<span class="assignment-badge ${statusClassName(row.mineStatus)}">${escapeHtml(statusLabel(row.mineStatus))}</span>`;
+    statusCell.innerHTML = `<span class="assignment-badge ${statusClassName(row.projectStatus)}">${escapeHtml(statusLabel(row.projectStatus))}</span>`;
 
     const disagreementCell = document.createElement("td");
     disagreementCell.innerHTML = `<span class="assignment-badge ${row.disagreementClass}">${escapeHtml(row.disagreementLabel)}</span>`;
@@ -452,16 +452,25 @@ function renderAssignmentsView() {
     const openBtn = document.createElement("button");
     openBtn.type = "button";
     openBtn.className = "secondary inline-btn";
-    openBtn.textContent = "Open";
-    openBtn.addEventListener("click", async () => {
-      await switchView("annotate");
-      await selectCase(row.caseId);
-    });
+    if (row.isAssignedToCurrentAnnotator) {
+      openBtn.textContent = "Open";
+      openBtn.addEventListener("click", async () => {
+        await switchView("annotate");
+        await selectCase(row.caseId);
+      });
+    } else {
+      openBtn.textContent = "Not assigned";
+      openBtn.disabled = true;
+    }
     actionCell.appendChild(openBtn);
 
     tr.append(caseCell, reviewersCell, statusCell, disagreementCell, actionCell);
     els.assignmentTableBody.appendChild(tr);
   }
+}
+
+function projectAssignmentCases() {
+  return state.cases.filter((item) => state.assignmentsByCase.has(item.caseId));
 }
 
 function buildAssignmentRow(item) {
@@ -482,6 +491,11 @@ function buildAssignmentRow(item) {
   const finalizedStatuses = new Set(["complete", "needs_adjudication"]);
   const allFinalized = reviewers.every((reviewer) => finalizedStatuses.has(reviewer.annotation?.status));
   const missingReviewer = reviewerAnnotations.length < assignedReviewers.length;
+  const projectStatus = allFinalized
+    ? "complete"
+    : reviewerAnnotations.length
+      ? "in_progress"
+      : "not_started";
   const disagreement = allFinalized
     && compareReviewPayloads(reviewerAnnotations[0].annotation, reviewerAnnotations[1].annotation)
       ? "aligned"
@@ -494,6 +508,8 @@ function buildAssignmentRow(item) {
     title: item.userDecision || item.decisionType || item.caseId,
     reviewers,
     mineStatus: mine?.annotation?.status || "not_started",
+    projectStatus,
+    isAssignedToCurrentAnnotator: Boolean(mine),
     missingReviewer,
     disagreement,
     disagreementLabel: disagreement === "aligned" ? "Aligned" : disagreement === "disagreement" ? "Needs review" : "Waiting",
