@@ -179,6 +179,29 @@ const mechanismFieldTooltips = {
   },
 };
 
+const llmScreeningTooltips = {
+  UIS: {
+    title: "User Initiative Score",
+    definition: "How much initiative and decision-process ownership the user shows in this user turn.",
+    items: [
+      "0: fully delegated.",
+      "1: constrained options.",
+      "2: preference expressed.",
+      "3: independent reasoning.",
+    ],
+  },
+  CES: {
+    title: "Critical Engagement Score",
+    definition: "How much the user critically engages with the assistant or the decision in this user turn.",
+    items: [
+      "0: immediate acceptance.",
+      "1: clarification.",
+      "2: challenge.",
+      "3: independent alternative proposal.",
+    ],
+  },
+};
+
 const state = {
   app: null,
   auth: null,
@@ -716,7 +739,12 @@ function addLlmScreening(node, screening) {
   ]) {
     if (value === null || value === undefined || value === "") continue;
     const badge = document.createElement("span");
-    badge.textContent = `${label}: ${value}`;
+    badge.className = "llm-badge";
+    const labelText = document.createElement("span");
+    labelText.textContent = `${label}: ${value}`;
+    badge.appendChild(labelText);
+    const tooltip = buildLlmScreeningTooltip(label);
+    if (tooltip) badge.appendChild(tooltip);
     badges.appendChild(badge);
   }
 
@@ -744,6 +772,12 @@ function addLlmScreening(node, screening) {
   }
 
   node.querySelector(".turn-content").after(panel);
+}
+
+function buildLlmScreeningTooltip(label) {
+  const config = llmScreeningTooltips[label];
+  if (!config) return null;
+  return buildStaticTooltip(config, `${config.title} rubric help`);
 }
 
 function buildTooltip(key) {
