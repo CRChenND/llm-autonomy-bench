@@ -730,7 +730,7 @@ function renderTurns(caseItem, annotation) {
     rolePill.classList.add(turn.role);
     node.querySelector(".turn-index").textContent = `Turn ${index + 1}`;
     node.querySelector(".turn-content").textContent = turn.content;
-    addLlmScreening(node, turn.llmScreening);
+    addLlmScreening(node, turn);
     node.querySelector(".turn-note").value = saved.note || "";
 
     const coding = node.querySelector(".turn-coding");
@@ -767,8 +767,9 @@ function mechanismValue(value) {
 }
 
 function withLlmSuggestedCodes(saved, turn) {
-  if (turn.role !== "user" || !turn.llmScreening) return saved;
-  const suggested = suggestedHumanCodesFromLlm(turn.llmScreening);
+  const screenings = turnLlmScreenings(turn);
+  if (turn.role !== "user" || !screenings.length) return saved;
+  const suggested = suggestedHumanCodesFromLlm(screenings[screenings.length - 1]);
   return {
     ...saved,
     codes: {
@@ -839,14 +840,30 @@ function addSelect(parent, key, label, options, value) {
   parent.appendChild(wrapper);
 }
 
-function addLlmScreening(node, screening) {
-  if (!screening) return;
+function addLlmScreening(node, turn) {
+  const screenings = turnLlmScreenings(turn);
   const panel = document.createElement("section");
   panel.className = "llm-screening";
 
   const title = document.createElement("h3");
   title.textContent = "LLM screening hint";
   panel.appendChild(title);
+
+  if (!screenings.length) {
+    const empty = document.createElement("p");
+    empty.className = "llm-empty";
+    empty.textContent = "No LLM turn-level label in screening output for this transcript turn.";
+    panel.appendChild(empty);
+    node.querySelector(".turn-content").after(panel);
+    return;
+  }
+
+  screenings.forEach((screening, index) => {
+    if (screenings.length > 1) {
+      const entryTitle = document.createElement("h4");
+      entryTitle.textContent = `LLM entry ${index + 1}`;
+      panel.appendChild(entryTitle);
+    }
 
   const badges = document.createElement("div");
   badges.className = "llm-badges";
@@ -897,8 +914,15 @@ function addLlmScreening(node, screening) {
     suggestion.textContent = `Prefills when blank: ${suggestedEntries.map(([key, value]) => `${key}=${value}`).join(", ")}`;
     panel.appendChild(suggestion);
   }
+  });
 
   node.querySelector(".turn-content").after(panel);
+}
+
+function turnLlmScreenings(turn) {
+  if (Array.isArray(turn.llmScreenings)) return turn.llmScreenings;
+  if (turn.llmScreening) return [turn.llmScreening];
+  return [];
 }
 
 function buildLlmScreeningTooltip(label) {
@@ -1210,7 +1234,11 @@ function normalizeCaseItem(item) {
       .map((turn) => ({
         role: normalizeTurnRole(turn.role),
         content: String(turn.content || turn.text || ""),
-        llmScreening: turn.llmScreening || null,
+        llmScreenings: Array.isArray(turn.llmScreenings)
+          ? turn.llmScreenings
+          : turn.llmScreening
+            ? [turn.llmScreening]
+            : [],
       }))
       .filter((turn) => turn.role && turn.content),
   };

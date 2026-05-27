@@ -631,6 +631,13 @@ code {
   letter-spacing: 0.04em;
 }
 
+.llm-screening h4 {
+  margin: 12px 0 6px;
+  color: #334155;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
 .llm-screening p {
   margin: 8px 0 0;
   color: var(--text);
@@ -640,6 +647,11 @@ code {
 
 .llm-rationale {
   color: var(--muted) !important;
+}
+
+.llm-empty {
+  color: var(--muted) !important;
+  font-style: italic;
 }
 
 .llm-suggestion {
