@@ -92,4 +92,6 @@ It contains the 39 unique positive/borderline review cases selected by any of:
 
 If the loaded Firestore project has no `cases` documents, the app automatically falls back to this bundled set. With the default three annotators, each case receives two reviewers and each annotator receives 26 cases.
 
-The bundled cases also include LLM screening hints on user turns when available: `UIS`, `CES`, preference stability, utterance summary, rationale, and evidence snippets. These are displayed as reference material only; they do not prefill the human annotation fields.
+The bundled cases also include LLM screening hints on user turns when available: `UIS`, `CES`, preference stability, utterance summary, rationale, and evidence snippets. The UI uses `UIS` and `CES` to prefill compatible human fields only when those fields are blank.
+
+Human mechanism labels use the RAE mechanism taxonomy: `DDM`, `GD`, `PC`, `RCE`, `AI`, `LHD`, `OC`, `COS`, and `none`.
