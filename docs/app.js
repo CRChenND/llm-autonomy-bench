@@ -33,6 +33,7 @@ const els = {
   caseMeta: document.querySelector("#caseMeta"),
   caseTitle: document.querySelector("#caseTitle"),
   caseDecision: document.querySelector("#caseDecision"),
+  caseScreeningHints: document.querySelector("#caseScreeningHints"),
   emptyStateTitle: document.querySelector("#emptyState h2"),
   emptyStateText: document.querySelector("#emptyState p"),
   overallMechanismLabel: document.querySelector("#overallMechanismLabel"),
@@ -623,12 +624,63 @@ async function selectCase(caseId) {
   ].filter(Boolean).join(" · ");
   els.caseTitle.textContent = item.decisionType || "Decision-oriented conversation";
   els.caseDecision.textContent = item.userDecision || "No user decision summary available.";
+  renderCaseScreeningHints(item);
 
   const annotation = state.annotations.get(caseId) || emptyAnnotation(item);
   hydrateSummary(annotation);
   renderTurns(item, annotation);
   setSaveState("saved");
   renderCaseList();
+}
+
+function renderCaseScreeningHints(item) {
+  els.caseScreeningHints.textContent = "";
+  const summary = item.screeningSummary || {};
+  const unmatched = summary.unmatchedTurnLevelAutonomyTrajectory || [];
+  if (!unmatched.length) return;
+
+  const details = document.createElement("details");
+  details.className = "case-llm-unmatched";
+  const summaryEl = document.createElement("summary");
+  summaryEl.textContent = `Unmatched LLM turn labels (${unmatched.length})`;
+  details.appendChild(summaryEl);
+
+  for (const entry of unmatched) {
+    const itemEl = document.createElement("div");
+    itemEl.className = "case-llm-unmatched-item";
+    const badges = document.createElement("div");
+    badges.className = "llm-badges";
+    for (const [label, value] of [
+      ["LLM user turn", entry.turn],
+      ["UIS", entry.uis],
+      ["CES", entry.ces],
+      ["Preference", entry.preference_stability],
+    ]) {
+      if (value === null || value === undefined || value === "") continue;
+      const badge = document.createElement("span");
+      badge.className = "llm-badge";
+      const labelText = document.createElement("span");
+      labelText.textContent = `${label}: ${value}`;
+      badge.appendChild(labelText);
+      const tooltip = buildLlmScreeningTooltip(label);
+      if (tooltip) badge.appendChild(tooltip);
+      badges.appendChild(badge);
+    }
+    itemEl.appendChild(badges);
+    if (entry.user_utterance_summary) {
+      const text = document.createElement("p");
+      text.textContent = entry.user_utterance_summary;
+      itemEl.appendChild(text);
+    }
+    if (entry.rationale) {
+      const rationale = document.createElement("p");
+      rationale.className = "llm-rationale";
+      rationale.textContent = entry.rationale;
+      itemEl.appendChild(rationale);
+    }
+    details.appendChild(itemEl);
+  }
+  els.caseScreeningHints.appendChild(details);
 }
 
 function emptyAnnotation(item) {
@@ -661,7 +713,7 @@ function hydrateSummary(annotation) {
 function renderTurns(caseItem, annotation) {
   els.turnContainer.textContent = "";
   caseItem.turns.forEach((turn, index) => {
-    const saved = annotation.turns?.[index] || { codes: {}, note: "" };
+    const saved = withLlmSuggestedCodes(annotation.turns?.[index] || { codes: {}, note: "" }, turn);
     const node = els.turnTemplate.content.firstElementChild.cloneNode(true);
     node.dataset.index = String(index);
     node.classList.add(turn.role);
@@ -689,6 +741,50 @@ function renderTurns(caseItem, annotation) {
 
     els.turnContainer.appendChild(node);
   });
+}
+
+function withLlmSuggestedCodes(saved, turn) {
+  if (turn.role !== "user" || !turn.llmScreening) return saved;
+  const suggested = suggestedHumanCodesFromLlm(turn.llmScreening);
+  return {
+    ...saved,
+    codes: {
+      ...suggested,
+      ...(saved.codes || {}),
+    },
+  };
+}
+
+function suggestedHumanCodesFromLlm(screening) {
+  const codes = {};
+  const ces = llmScoreToHumanScore(screening.ces);
+  const uis = llmScoreToHumanScore(screening.uis);
+  const delegation = llmInitiativeToDelegationScore(screening.uis);
+  if (ces !== "") {
+    codes.Rt = ces;
+    codes.Ct = ces;
+  }
+  if (uis !== "") codes.It = uis;
+  if (delegation !== "") codes.Gt = delegation;
+  return codes;
+}
+
+function llmScoreToHumanScore(value) {
+  if (value === null || value === undefined || value === "") return "";
+  const score = Number(value);
+  if (Number.isNaN(score)) return "";
+  if (score <= 0) return 0;
+  if (score === 1) return 0.5;
+  return 1;
+}
+
+function llmInitiativeToDelegationScore(value) {
+  if (value === null || value === undefined || value === "") return "";
+  const score = Number(value);
+  if (Number.isNaN(score)) return "";
+  if (score <= 0) return 1;
+  if (score === 1) return 0.5;
+  return 0;
 }
 
 function addSelect(parent, key, label, options, value) {
@@ -769,6 +865,14 @@ function addLlmScreening(node, screening) {
       evidence.appendChild(li);
     }
     panel.appendChild(evidence);
+  }
+  const suggested = suggestedHumanCodesFromLlm(screening);
+  const suggestedEntries = Object.entries(suggested);
+  if (suggestedEntries.length) {
+    const suggestion = document.createElement("p");
+    suggestion.className = "llm-suggestion";
+    suggestion.textContent = `Prefills when blank: ${suggestedEntries.map(([key, value]) => `${key}=${value}`).join(", ")}`;
+    panel.appendChild(suggestion);
   }
 
   node.querySelector(".turn-content").after(panel);
