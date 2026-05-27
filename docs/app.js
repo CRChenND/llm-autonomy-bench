@@ -74,6 +74,7 @@ const assignmentConfig = {
   casesPerAnnotator: 26,
 };
 
+const defaultProjectId = "wildchat-rae-v2-positive-review";
 const bundledCasesPath = "./wildchat_rae_v2_positive_review_cases.json";
 
 const scoreGuides = {
@@ -184,7 +185,7 @@ const state = {
   db: null,
   user: null,
   firebaseConfig: null,
-  projectId: localStorage.getItem("rae.projectId") || "wildchat-rae-v2-positive-review",
+  projectId: initialProjectId(),
   annotatorId: localStorage.getItem("rae.annotatorId") || "",
   cases: [],
   visibleCases: [],
@@ -209,6 +210,12 @@ await bootstrapConfig();
 initStaticTooltips();
 wireEvents();
 tryInitializeFirebase();
+
+function initialProjectId() {
+  const stored = localStorage.getItem("rae.projectId");
+  if (!stored || stored === "pilot-v1") return defaultProjectId;
+  return stored;
+}
 
 async function bootstrapConfig() {
   state.firebaseConfig = await loadDeployedFirebaseConfig();
@@ -324,7 +331,7 @@ async function loadProject() {
   state.annotationSignatures = new Map();
   state.cases = caseSnap.empty
     ? await loadBundledCases()
-    : caseSnap.docs.map((item) => item.data());
+    : caseSnap.docs.map((item) => normalizeCaseItem(item.data())).filter(Boolean);
   for (const item of annotationSnap.docs) {
     const data = item.data();
     if (!state.allAnnotationsByCase.has(data.caseId)) {
@@ -695,6 +702,10 @@ function addLlmScreening(node, screening) {
   const panel = document.createElement("section");
   panel.className = "llm-screening";
 
+  const title = document.createElement("h3");
+  title.textContent = "LLM screening hint";
+  panel.appendChild(title);
+
   const badges = document.createElement("div");
   badges.className = "llm-badges";
   for (const [label, value] of [
@@ -709,7 +720,7 @@ function addLlmScreening(node, screening) {
     badges.appendChild(badge);
   }
 
-  panel.appendChild(badges);
+  if (badges.childElementCount) panel.appendChild(badges);
   if (screening.summary) {
     const summary = document.createElement("p");
     summary.textContent = screening.summary;
@@ -1043,7 +1054,7 @@ function normalizeTurnRole(role) {
 }
 
 function sanitizeProjectId(value) {
-  return sanitizeDocId(value || "wildchat-rae-v2-positive-review");
+  return sanitizeDocId(value || defaultProjectId);
 }
 
 function sanitizeAnnotatorId(value) {

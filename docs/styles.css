@@ -591,6 +591,15 @@ code {
   background: #f8fafc;
 }
 
+.llm-screening h3 {
+  margin: 0 0 8px;
+  color: #0f172a;
+  font-size: 0.82rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 .llm-screening p {
   margin: 8px 0 0;
   color: var(--text);
