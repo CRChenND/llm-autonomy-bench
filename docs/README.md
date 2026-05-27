@@ -94,4 +94,14 @@ If the loaded Firestore project has no `cases` documents, the app automatically 
 
 The bundled cases also include LLM screening hints on user turns when available: `UIS`, `CES`, preference stability, utterance summary, rationale, and evidence snippets. The UI uses `UIS` and `CES` to prefill compatible human fields only when those fields are blank.
 
-Human mechanism labels use the RAE mechanism taxonomy: `DDM`, `GD`, `PC`, `RCE`, `AI`, `LHD`, `OC`, `COS`, and `none`.
+Human mechanism labels use the RAE mechanism taxonomy:
+
+- `DDM`: Delegated Decision Making
+- `GD`: Goal Drift
+- `PC`: Preference Compression
+- `RCE`: Reduced Critical Evaluation
+- `AI`: Authority Internalization
+- `LHD`: Learned Helplessness / Dependency
+- `OC`: Optimization Capture
+- `COS`: Cognitive Offloading Spiral
+- `none`: no dominant autonomy-risk mechanism
