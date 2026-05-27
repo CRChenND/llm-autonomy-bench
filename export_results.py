@@ -46,6 +46,21 @@ BEHAVIOR_ALIASES = {
     "next_action_shaping": "next_action_shaping",
     "risk assessment": "risk_assessment",
     "option generation": "option_generation",
+    "reflection decline": "reflection_decline",
+    "choice awareness decline": "choice_awareness_decline",
+    "verification decline": "verification_decline",
+    "ownership decline": "ownership_decline",
+    "delegation increase": "delegation_increase",
+    "acceptance after pressure": "acceptance_after_pressure",
+    "delegated decision making": "delegated_decision_making",
+    "goal drift": "goal_drift",
+    "preference compression": "preference_compression",
+    "reduced critical evaluation": "reduced_critical_evaluation",
+    "authority internalization": "authority_internalization",
+    "learned helplessness": "learned_helplessness_dependency",
+    "dependency": "learned_helplessness_dependency",
+    "optimization capture": "optimization_capture",
+    "cognitive offloading spiral": "cognitive_offloading_spiral",
 }
 
 
@@ -137,13 +152,33 @@ def build_case_record(
         "domain": normalize_domain(screening.get("domain") or candidate["filter_metadata"].get("inferred_domain", "")),
         "decision_type": screening.get("decision_type", ""),
         "decision_oriented_score": screening.get("decision_oriented_score", 0),
+        "case_category": screening.get("case_category", ""),
+        "autonomy_shift_strength": screening.get("autonomy_shift_strength", "none"),
+        "trajectory_signal_strength": screening.get("trajectory_signal_strength", "none"),
+        "keep_for_main_analysis": screening.get("keep_for_main_analysis", False),
+        "keep_for_contrast_or_training": screening.get("keep_for_contrast_or_training", False),
+        "keep_for_manual_review": screening.get("keep_for_manual_review", False),
+        "topic_consistency_score": screening.get("topic_consistency_score", 0),
+        "topic_consistency_rationale": screening.get("topic_consistency_rationale", ""),
         "seed_quality": screening.get("candidate_seed_quality", "poor"),
         "risk_level": screening.get("risk_level", "low"),
+        "keep_for_rae": screening.get("keep_for_rae", False),
+        "primary_mechanism": screening.get("primary_mechanism", "none"),
+        "secondary_mechanism": screening.get("secondary_mechanism", "none"),
+        "user_initial_goal": screening.get("user_initial_goal", ""),
+        "initial_preference_or_criteria": screening.get("initial_preference_or_criteria", ""),
+        "assistant_recommendation_or_framing": screening.get("assistant_recommendation_or_framing", ""),
+        "user_final_choice_or_later_stance": screening.get("user_final_choice_or_later_stance", ""),
+        "preference_changed": screening.get("preference_changed", False),
+        "explicit_reflection": screening.get("explicit_reflection", False),
+        "initiative_drop": screening.get("initiative_drop", 0),
+        "critical_evaluation_drop": screening.get("critical_evaluation_drop", 0),
+        "turn_level_autonomy_trajectory": screening.get("turn_level_autonomy_trajectory", []),
+        "autonomy_shift_event": screening.get("autonomy_shift_event", {}),
+        "evidence_turns": screening.get("evidence_turns", []),
         "num_turns": candidate["filter_metadata"].get("num_turns", len(conversation["turns"])),
-        "user_decision": screening.get("key_user_decision", ""),
-        "assistant_role": screening.get("assistant_role", ""),
         "autonomy_behaviors": normalize_behaviors(screening.get("autonomy_relevant_behaviors", [])),
-        "why_this_is_a_good_seed": screening.get("why_keep_or_exclude", ""),
+        "why_categorized_this_way": screening.get("why_categorized_this_way", ""),
         "representative_excerpt": representative_excerpt(conversation, representative_excerpt_chars),
         "template_potential": template_potential(screening),
         "exclude_sensitive_details": contains_sensitive_details(conversation),
@@ -165,13 +200,33 @@ def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         "domain",
         "decision_type",
         "decision_oriented_score",
+        "case_category",
+        "autonomy_shift_strength",
+        "trajectory_signal_strength",
+        "keep_for_main_analysis",
+        "keep_for_contrast_or_training",
+        "keep_for_manual_review",
+        "topic_consistency_score",
+        "topic_consistency_rationale",
         "seed_quality",
         "risk_level",
+        "keep_for_rae",
+        "primary_mechanism",
+        "secondary_mechanism",
+        "user_initial_goal",
+        "initial_preference_or_criteria",
+        "assistant_recommendation_or_framing",
+        "user_final_choice_or_later_stance",
+        "preference_changed",
+        "explicit_reflection",
+        "initiative_drop",
+        "critical_evaluation_drop",
+        "turn_level_autonomy_trajectory",
+        "autonomy_shift_event",
+        "evidence_turns",
         "num_turns",
-        "user_decision",
-        "assistant_role",
         "autonomy_behaviors",
-        "why_this_is_a_good_seed",
+        "why_categorized_this_way",
         "representative_excerpt",
         "template_potential",
         "exclude_sensitive_details",
@@ -183,6 +238,12 @@ def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         for row in rows:
             csv_row = dict(row)
             csv_row["autonomy_behaviors"] = "; ".join(row.get("autonomy_behaviors", []))
+            csv_row["turn_level_autonomy_trajectory"] = json.dumps(
+                row.get("turn_level_autonomy_trajectory", []),
+                ensure_ascii=False,
+            )
+            csv_row["autonomy_shift_event"] = json.dumps(row.get("autonomy_shift_event", {}), ensure_ascii=False)
+            csv_row["evidence_turns"] = json.dumps(row.get("evidence_turns", []), ensure_ascii=False)
             writer.writerow(csv_row)
 
 
@@ -193,7 +254,16 @@ def write_summary_report(
     retained_cases_override: list[dict[str, Any]] | None = None,
 ) -> None:
     scores = Counter(row["screening"]["decision_oriented_score"] for row in screened_rows)
+    risk_levels = Counter(row["screening"].get("risk_level", "none") for row in screened_rows)
+    nonmain_categories = Counter(
+        row["screening"].get("case_category", "unknown")
+        for row in screened_rows
+        if not row["screening"].get("keep_for_rae", False)
+    )
     retained_cases = retained_cases_override or [row["case"] for row in screened_rows if row.get("case")]
+    mechanisms = Counter(case.get("primary_mechanism", "none") for case in retained_cases)
+    initiative_drops = Counter(case.get("initiative_drop", 0) for case in retained_cases)
+    critical_drops = Counter(case.get("critical_evaluation_drop", 0) for case in retained_cases)
     domains = Counter(case["domain"] for case in retained_cases)
     behaviors = Counter(
         behavior
@@ -214,6 +284,11 @@ def write_summary_report(
         f"- Conversations screened: {len(screened_rows)}",
         f"- Retained deduplicated cases: {len(retained_cases)}",
         f"- Score counts: {dict(sorted(scores.items()))}",
+        f"- Risk levels: {dict(risk_levels.most_common())}",
+        f"- Primary mechanisms among retained cases: {dict(mechanisms.most_common())}",
+        f"- Initiative drop among retained cases: {dict(sorted(initiative_drops.items()))}",
+        f"- Critical evaluation drop among retained cases: {dict(sorted(critical_drops.items()))}",
+        f"- Top non-main case categories: {dict(nonmain_categories.most_common(10))}",
         f"- Top domains: {dict(domains.most_common(10))}",
         f"- Top autonomy behaviors: {dict(behaviors.most_common(10))}",
         "",
@@ -222,6 +297,6 @@ def write_summary_report(
     for case in recommended:
         lines.append(
             f"- {case['case_id']} | {case['domain']} | score={case['decision_oriented_score']} | "
-            f"quality={case['seed_quality']} | {case['user_decision']}"
+            f"quality={case['seed_quality']} | {case['user_initial_goal']}"
         )
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")

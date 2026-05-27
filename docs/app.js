@@ -71,8 +71,10 @@ const mechanismOptions = [
 
 const assignmentConfig = {
   annotators: ["annotator-a", "annotator-b", "annotator-c"],
-  casesPerAnnotator: 20,
+  casesPerAnnotator: 26,
 };
+
+const bundledCasesPath = "./wildchat_rae_v2_positive_review_cases.json";
 
 const scoreGuides = {
   Rt: {
@@ -182,7 +184,7 @@ const state = {
   db: null,
   user: null,
   firebaseConfig: null,
-  projectId: localStorage.getItem("rae.projectId") || "pilot-v1",
+  projectId: localStorage.getItem("rae.projectId") || "wildchat-rae-v2-positive-review",
   annotatorId: localStorage.getItem("rae.annotatorId") || "",
   cases: [],
   visibleCases: [],
@@ -320,7 +322,9 @@ async function loadProject() {
   state.annotations = new Map();
   state.allAnnotationsByCase = new Map();
   state.annotationSignatures = new Map();
-  state.cases = caseSnap.docs.map((item) => item.data());
+  state.cases = caseSnap.empty
+    ? await loadBundledCases()
+    : caseSnap.docs.map((item) => item.data());
   for (const item of annotationSnap.docs) {
     const data = item.data();
     if (!state.allAnnotationsByCase.has(data.caseId)) {
@@ -580,7 +584,13 @@ async function selectCase(caseId) {
   els.caseWorkspace.classList.remove("hidden");
   els.saveAnnotationBtn.disabled = !state.user;
 
-  els.caseMeta.textContent = [item.caseId, item.domain, item.riskLevel].filter(Boolean).join(" · ");
+  els.caseMeta.textContent = [
+    item.caseId,
+    item.domain,
+    item.riskLevel,
+    item.caseCategory,
+    item.reviewReasons?.join(", "),
+  ].filter(Boolean).join(" · ");
   els.caseTitle.textContent = item.decisionType || "Decision-oriented conversation";
   els.caseDecision.textContent = item.userDecision || "No user decision summary available.";
 
@@ -630,6 +640,7 @@ function renderTurns(caseItem, annotation) {
     rolePill.classList.add(turn.role);
     node.querySelector(".turn-index").textContent = `Turn ${index + 1}`;
     node.querySelector(".turn-content").textContent = turn.content;
+    addLlmScreening(node, turn.llmScreening);
     node.querySelector(".turn-note").value = saved.note || "";
 
     const coding = node.querySelector(".turn-coding");
@@ -677,6 +688,51 @@ function addSelect(parent, key, label, options, value) {
 
   wrapper.append(labelEl, select, hint);
   parent.appendChild(wrapper);
+}
+
+function addLlmScreening(node, screening) {
+  if (!screening) return;
+  const panel = document.createElement("section");
+  panel.className = "llm-screening";
+
+  const badges = document.createElement("div");
+  badges.className = "llm-badges";
+  for (const [label, value] of [
+    ["LLM user turn", screening.userTurn],
+    ["UIS", screening.uis],
+    ["CES", screening.ces],
+    ["Preference", screening.preferenceStability],
+  ]) {
+    if (value === null || value === undefined || value === "") continue;
+    const badge = document.createElement("span");
+    badge.textContent = `${label}: ${value}`;
+    badges.appendChild(badge);
+  }
+
+  panel.appendChild(badges);
+  if (screening.summary) {
+    const summary = document.createElement("p");
+    summary.textContent = screening.summary;
+    panel.appendChild(summary);
+  }
+  if (screening.rationale) {
+    const rationale = document.createElement("p");
+    rationale.className = "llm-rationale";
+    rationale.textContent = screening.rationale;
+    panel.appendChild(rationale);
+  }
+  if (Array.isArray(screening.evidence) && screening.evidence.length) {
+    const evidence = document.createElement("ul");
+    evidence.className = "llm-evidence";
+    for (const item of screening.evidence) {
+      const li = document.createElement("li");
+      li.textContent = [item.evidence_type, item.quote, item.rationale].filter(Boolean).join(" | ");
+      evidence.appendChild(li);
+    }
+    panel.appendChild(evidence);
+  }
+
+  node.querySelector(".turn-content").after(panel);
 }
 
 function buildTooltip(key) {
@@ -953,8 +1009,41 @@ function setAuthStatus(text, ready) {
   els.authStatus.classList.toggle("ready", ready);
 }
 
+async function loadBundledCases() {
+  try {
+    const response = await fetch(bundledCasesPath, { cache: "no-store" });
+    if (!response.ok) return [];
+    const rows = await response.json();
+    return Array.isArray(rows) ? rows.map(normalizeCaseItem).filter(Boolean) : [];
+  } catch (error) {
+    console.error(error);
+    return [];
+  }
+}
+
+function normalizeCaseItem(item) {
+  if (!item?.caseId || !Array.isArray(item.turns)) return null;
+  return {
+    ...item,
+    turns: item.turns
+      .map((turn) => ({
+        role: normalizeTurnRole(turn.role),
+        content: String(turn.content || turn.text || ""),
+        llmScreening: turn.llmScreening || null,
+      }))
+      .filter((turn) => turn.role && turn.content),
+  };
+}
+
+function normalizeTurnRole(role) {
+  const normalized = String(role || "").toLowerCase();
+  if (["user", "human"].includes(normalized)) return "user";
+  if (["assistant", "gpt"].includes(normalized)) return "assistant";
+  return "";
+}
+
 function sanitizeProjectId(value) {
-  return sanitizeDocId(value || "pilot-v1");
+  return sanitizeDocId(value || "wildchat-rae-v2-positive-review");
 }
 
 function sanitizeAnnotatorId(value) {

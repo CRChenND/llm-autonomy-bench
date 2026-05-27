@@ -48,6 +48,15 @@ def candidate_sort_key(candidate: dict[str, Any]) -> tuple[int, int, int]:
     )
 
 
+def passes_structural_screen(candidate: dict[str, Any], config: PipelineConfig) -> bool:
+    metadata = candidate["filter_metadata"]
+    return (
+        metadata.get("num_user_turns", 0) >= config.min_user_turns
+        and metadata.get("num_turns", 0) >= config.min_total_turns
+        and metadata.get("char_count", 0) >= config.min_chars
+    )
+
+
 def candidate_id_key(candidate: dict[str, Any]) -> str:
     conversation = candidate["conversation"]
     return f"{conversation.get('source')}::{conversation.get('conversation_id')}"
@@ -95,6 +104,15 @@ def prepare_candidates_for_llm(
     top_n: int | None,
 ) -> list[dict[str, Any]]:
     prepared = [refresh_candidate_metadata(candidate, config) for candidate in candidates]
+    before = len(prepared)
+    prepared = [candidate for candidate in prepared if passes_structural_screen(candidate, config)]
+    LOGGER.info(
+        "Kept %s/%s candidates satisfying structural filters: user_turns >= %s, total_turns >= %s",
+        len(prepared),
+        before,
+        config.min_user_turns,
+        config.min_total_turns,
+    )
     if english_only:
         before = len(prepared)
         prepared = [
@@ -143,6 +161,8 @@ def stream_filter_candidates(
             candidate = refresh_candidate_metadata(candidate, config)
             if progress is not None:
                 progress.update(1)
+            if not passes_structural_screen(candidate, config):
+                continue
             score = candidate["filter_metadata"].get("decision_signal_score", 0)
             if english_only and not is_english_like(conversation_text_for_candidate(candidate)):
                 if progress is not None:
@@ -220,6 +240,8 @@ def load_candidates_for_llm(
             candidate = refresh_candidate_metadata(candidate, config)
             if progress is not None:
                 progress.update(1)
+            if not passes_structural_screen(candidate, config):
+                continue
             score = candidate["filter_metadata"].get("decision_signal_score", 0)
             if english_only and not is_english_like(conversation_text_for_candidate(candidate)):
                 if progress is not None:

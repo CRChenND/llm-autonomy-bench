@@ -8,12 +8,14 @@ import json
 import logging
 import os
 import warnings
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
 from config import PipelineConfig, load_config_from_env
 from candidate_selection import (
     candidate_id_key,
+    candidate_sort_key,
     dedupe_candidates,
     load_candidates_for_llm,
     normalize_for_dedupe,
@@ -28,7 +30,7 @@ from export_results import (
     write_summary_report,
 )
 from load_data import iter_candidate_conversations
-from llm_screen import screen_conversation
+from llm_screen import SCREENING_SCHEMA_VERSION, screen_conversation
 from normalize import conversation_to_text
 
 LOGGER = logging.getLogger(__name__)
@@ -71,6 +73,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--append-candidates", action="store_true")
     parser.add_argument("--screen-existing-candidates", type=Path, default=None)
     parser.add_argument(
+        "--rank-candidates-output",
+        type=Path,
+        default=None,
+        help="Write the filtered/deduplicated/ranked candidate queue to JSONL and exit before LLM screening.",
+    )
+    parser.add_argument(
         "--retry-screening-errors",
         type=Path,
         default=None,
@@ -97,6 +105,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--english-only", action="store_true", help="Only send English-like candidates to LLM screening.")
     parser.add_argument("--min-decision-signal-score", type=int, default=0)
     parser.add_argument("--top-n-for-llm", type=int, default=None)
+    parser.add_argument(
+        "--llm-concurrency",
+        type=int,
+        default=None,
+        help="Number of concurrent LLM screening requests. Defaults to LLM_CONCURRENCY or 1.",
+    )
     parser.add_argument("--no-dedupe-candidates", action="store_true", help="Disable candidate deduplication before LLM screening.")
     parser.add_argument("--resume-screening", action="store_true", help="Append to existing screened_results.jsonl and skip already screened conversations.")
     parser.add_argument("--fail-fast", action="store_true", help="Stop screening on the first LLM error.")
@@ -118,6 +132,8 @@ def config_from_args(args: argparse.Namespace) -> PipelineConfig:
         updates["max_records_per_dataset"] = None
     if args.max_records_per_dataset is not None:
         updates["max_records_per_dataset"] = args.max_records_per_dataset
+    if args.llm_concurrency is not None:
+        updates["llm_concurrency"] = max(1, args.llm_concurrency)
     if args.sources:
         requested_sources = {source.strip().lower() for source in args.sources.split(",") if source.strip()}
         datasets = tuple(
@@ -176,15 +192,45 @@ def write_candidates_streaming(
 
 def error_screening_result(error_message: str) -> dict[str, Any]:
     return {
+        "screening_schema_version": SCREENING_SCHEMA_VERSION,
         "decision_oriented_score": 0,
+        "case_category": "insufficient_context",
+        "autonomy_shift_strength": "none",
+        "trajectory_signal_strength": "none",
         "keep": False,
+        "keep_for_rae": False,
+        "keep_for_main_analysis": False,
+        "keep_for_contrast_or_training": False,
+        "keep_for_manual_review": False,
         "decision_type": "",
         "domain": "",
+        "topic_consistency_score": 0,
+        "topic_consistency_rationale": "",
         "autonomy_relevant_behaviors": [],
-        "why_keep_or_exclude": f"LLM screening failed: {error_message}",
-        "key_user_decision": "",
-        "assistant_role": "",
-        "risk_level": "low",
+        "primary_mechanism": "none",
+        "secondary_mechanism": "none",
+        "user_initial_goal": "",
+        "initial_preference_or_criteria": "",
+        "assistant_recommendation_or_framing": "",
+        "user_final_choice_or_later_stance": "",
+        "preference_changed": False,
+        "explicit_reflection": False,
+        "initiative_drop": 0,
+        "critical_evaluation_drop": 0,
+        "turn_level_autonomy_trajectory": [],
+        "autonomy_shift_event": {
+            "preference_or_goal_expressed_earlier": False,
+            "preference_absent_or_weakened_later": False,
+            "model_suggestion_precedes_shift": False,
+            "no_explicit_reflection_on_shift": False,
+            "initiative_drop": 0,
+            "critical_evaluation_drop": 0,
+            "shift_turn": "",
+            "summary": "",
+        },
+        "evidence_turns": [],
+        "why_categorized_this_way": f"LLM screening failed: {error_message}",
+        "risk_level": "none",
         "candidate_seed_quality": "poor",
     }
 
@@ -194,7 +240,8 @@ def case_dedupe_key(case: dict[str, Any]) -> str:
         [
             str(case.get("domain", "")),
             str(case.get("decision_type", "")),
-            str(case.get("user_decision", "")),
+            str(case.get("user_initial_goal", "")),
+            str(case.get("initial_preference_or_criteria", "")),
         ]
     )
     normalized = normalize_for_dedupe(text)
@@ -236,7 +283,18 @@ def screen_candidates(
     existing_rows = []
     existing_ids = set()
     if resume and screened_path.exists():
-        existing_rows = list(read_jsonl(screened_path))
+        loaded_rows = list(read_jsonl(screened_path))
+        existing_rows = [
+            row
+            for row in loaded_rows
+            if row.get("screening", {}).get("screening_schema_version") == SCREENING_SCHEMA_VERSION
+        ]
+        if len(existing_rows) != len(loaded_rows):
+            raise RuntimeError(
+                f"{screened_path} contains {len(loaded_rows) - len(existing_rows)} legacy screened rows "
+                f"that do not match {SCREENING_SCHEMA_VERSION}. Use a new --output-prefix for RAE screening "
+                "or move the old screened_results.jsonl before resuming."
+            )
         existing_ids = {candidate_id_key(row["candidate"]) for row in existing_rows if row.get("candidate")}
         LOGGER.info("Resume enabled: loaded %s existing screened rows", len(existing_rows))
     elif screened_path.exists():
@@ -249,17 +307,11 @@ def screen_candidates(
         LOGGER.info("Resume enabled: skipping %s already screened candidates", len(candidates) - len(pending_candidates))
 
     screened_rows = list(existing_rows)
-    progress = progress_bar(pending_candidates, "Screening candidates")
-    for candidate in progress:
+    concurrency = max(1, min(config.llm_concurrency, len(pending_candidates) or 1))
+    LOGGER.info("Screening %s pending candidates with concurrency=%s", len(pending_candidates), concurrency)
+
+    def screen_one(candidate: dict[str, Any]) -> dict[str, Any]:
         conversation = candidate["conversation"]
-        if hasattr(progress, "set_postfix"):
-            progress.set_postfix(
-                source=conversation["source"],
-                id=str(conversation["conversation_id"])[:10],
-                score=candidate.get("filter_metadata", {}).get("decision_signal_score", 0),
-                en=candidate.get("filter_metadata", {}).get("english_likeness_score", 0),
-                refresh=False,
-            )
         error_message = None
         try:
             screening = screen_conversation(conversation, config)
@@ -275,13 +327,51 @@ def screen_candidates(
             )
             screening = error_screening_result(error_message)
         case = None
-        if screening["decision_oriented_score"] >= 2 and screening["keep"]:
+        if screening.get("keep_for_rae", screening.get("keep", False)):
             case = build_case_record(candidate, screening, config.representative_excerpt_chars)
         row = {"candidate": candidate, "screening": screening, "case": case}
         if error_message:
             row["error"] = error_message
-        append_jsonl(screened_path, row)
-        screened_rows.append(row)
+        return row
+
+    if concurrency == 1:
+        progress = progress_bar(pending_candidates, "Screening candidates")
+        for candidate in progress:
+            conversation = candidate["conversation"]
+            if hasattr(progress, "set_postfix"):
+                progress.set_postfix(
+                    source=conversation["source"],
+                    id=str(conversation["conversation_id"])[:10],
+                    score=candidate.get("filter_metadata", {}).get("decision_signal_score", 0),
+                    en=candidate.get("filter_metadata", {}).get("english_likeness_score", 0),
+                    refresh=False,
+                )
+            row = screen_one(candidate)
+            append_jsonl(screened_path, row)
+            screened_rows.append(row)
+        return screened_rows
+
+    progress = progress_bar(pending_candidates, "Screening candidates")
+    with ThreadPoolExecutor(max_workers=concurrency) as executor:
+        futures = {executor.submit(screen_one, candidate): candidate for candidate in pending_candidates}
+        for future in as_completed(futures):
+            candidate = futures[future]
+            conversation = candidate["conversation"]
+            if hasattr(progress, "set_postfix"):
+                progress.set_postfix(
+                    source=conversation["source"],
+                    id=str(conversation["conversation_id"])[:10],
+                    score=candidate.get("filter_metadata", {}).get("decision_signal_score", 0),
+                    en=candidate.get("filter_metadata", {}).get("english_likeness_score", 0),
+                    refresh=False,
+                )
+            row = future.result()
+            append_jsonl(screened_path, row)
+            if hasattr(progress, "update"):
+                progress.update(1)
+            screened_rows.append(row)
+    if hasattr(progress, "close"):
+        progress.close()
     return screened_rows
 
 
@@ -360,7 +450,7 @@ def rebuild_screened_rows(
         candidate = row.get("candidate")
         screening = row.get("screening", {})
         case = None
-        if candidate and screening.get("decision_oriented_score", 0) >= 2 and screening.get("keep"):
+        if candidate and screening.get("keep_for_rae", screening.get("keep", False)):
             case = build_case_record(candidate, screening, config.representative_excerpt_chars)
         rebuilt_row = {
             "candidate": candidate,
@@ -423,7 +513,7 @@ def rerun_screening_errors(
             screening = error_screening_result(error_message)
 
         case = None
-        if screening["decision_oriented_score"] >= 2 and screening["keep"]:
+        if screening.get("keep_for_rae", screening.get("keep", False)):
             case = build_case_record(candidate, screening, config.representative_excerpt_chars)
         updated_row = {"candidate": candidate, "screening": screening, "case": case}
         if error_message:
@@ -518,6 +608,16 @@ def main() -> None:
             dedupe=not args.no_dedupe_candidates,
             progress_factory=streaming_progress_bar,
         )
+        if args.rank_candidates_output:
+            ranked_candidates = sorted(candidates, key=candidate_sort_key, reverse=True)
+            for rank, candidate in enumerate(ranked_candidates, start=1):
+                metadata = dict(candidate.get("filter_metadata") or {})
+                metadata["rank"] = rank
+                candidate["filter_metadata"] = metadata
+            write_jsonl(args.rank_candidates_output, ranked_candidates)
+            LOGGER.info("Wrote %s ranked candidates to %s", len(ranked_candidates), args.rank_candidates_output)
+            LOGGER.info("Rank-candidates mode complete; no LLM screening was run.")
+            return
     elif args.prefilter_only:
         candidate_path = args.candidate_output or prefixed_path(config.output_dir, args.output_prefix, "candidates.jsonl")
         if args.append_candidates and not candidate_path.exists():

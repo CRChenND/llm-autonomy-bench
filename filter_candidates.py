@@ -16,9 +16,13 @@ STRONG_DECISION_PATTERNS = [
     r"\bwhat should i do\b",
     r"\bshould i\b",
     r"\bhelp me decide\b",
+    r"\bhelp me choose\b",
     r"\bwhich (one|option|would|should)\b",
+    r"\bwhich one should i choose\b",
     r"\bwhat would you do\b",
     r"\bdo you think i should\b",
+    r"\bcan't decide\b",
+    r"\bcant decide\b",
     r"\bis it worth it\b",
     r"\bwould it be (better|okay|wise)\b",
 ]
@@ -37,7 +41,11 @@ COMPARISON_PATTERNS = [
 AGENCY_PATTERNS = [
     r"\btell me what to do\b",
     r"\bchoose for me\b",
-    r"\bpick (one|for me)\b",
+    r"\bpick (one|for me|the best)\b",
+    r"\byou decide\b",
+    r"\bwhatever you think\b",
+    r"\bif you think so\b",
+    r"\byou know better\b",
     r"\bmake (a|the) plan\b",
     r"\bwrite (a|the|my) (reply|response|email|message)\b",
     r"\bhow should i (reply|respond|say|tell|ask)\b",
@@ -65,7 +73,95 @@ HIGH_STAKES_PATTERNS = [
     r"\bsalary\b",
     r"\brent\b",
     r"\blease\b",
+    r"\brelationship\b",
+    r"\bbreak up\b",
+    r"\bmarry\b",
+    r"\bcollege\b",
+    r"\buniversity\b",
+    r"\bcareer\b",
+    r"\barchitecture\b",
+    r"\btrade[- ]?off\b",
 ]
+
+AUTONOMY_SENSITIVE_DOMAIN_PATTERNS = {
+    "career": [
+        r"\bcareer\b",
+        r"\bjob\b",
+        r"\bjob offer\b",
+        r"\bsalary\b",
+        r"\binterview\b",
+        r"\bmanager\b",
+        r"\bwork\b",
+    ],
+    "relationship": [
+        r"\brelationship\b",
+        r"\bpartner\b",
+        r"\bboyfriend\b",
+        r"\bgirlfriend\b",
+        r"\bfriend\b",
+        r"\bfamily\b",
+        r"\bbreak up\b",
+        r"\bmarry\b",
+    ],
+    "medical": [
+        r"\bmedical\b",
+        r"\bhealth\b",
+        r"\bdoctor\b",
+        r"\btherapy\b",
+        r"\btherapist\b",
+        r"\bsymptom\b",
+    ],
+    "finance": [
+        r"\bfinance\b",
+        r"\binvest(ment|ing)?\b",
+        r"\bmoney\b",
+        r"\brent\b",
+        r"\blease\b",
+        r"\bloan\b",
+        r"\bbudget\b",
+    ],
+    "education": [
+        r"\beducation\b",
+        r"\bschool\b",
+        r"\bcollege\b",
+        r"\buniversity\b",
+        r"\bphd\b",
+        r"\bstudy\b",
+        r"\bclass\b",
+    ],
+    "life_planning": [
+        r"\blife plan\b",
+        r"\blife planning\b",
+        r"\bmove\b",
+        r"\brelocate\b",
+        r"\bwhere should i live\b",
+        r"\bplan\b",
+        r"\broadmap\b",
+    ],
+    "productivity": [
+        r"\bproductivity\b",
+        r"\bprioritize\b",
+        r"\bschedule\b",
+        r"\broutine\b",
+        r"\bhabit\b",
+        r"\btime management\b",
+    ],
+    "coding_architecture": [
+        r"\barchitecture\b",
+        r"\btrade[- ]?off\b",
+        r"\bframework\b",
+        r"\btech stack\b",
+        r"\bdesign decision\b",
+        r"\brefactor\b",
+    ],
+    "shopping": [
+        r"\bshopping\b",
+        r"\bbuy\b",
+        r"\bpurchase\b",
+        r"\bwhich .* should i get\b",
+        r"\brecommend .* product\b",
+    ],
+}
 
 LOW_SIGNAL_PATTERNS = [
     r"\bwhat is\b",
@@ -122,6 +218,7 @@ def decision_signal_score(conversation: dict[str, Any], keyword_hit_count: int) 
     agency_hits = regex_hits(text, AGENCY_PATTERNS)
     reflection_hits = regex_hits(text, REFLECTION_PATTERNS)
     high_stakes_hits = regex_hits(text, HIGH_STAKES_PATTERNS)
+    domain_hits = autonomy_sensitive_domain_hits(text)
     low_signal_hits = regex_hits(text, LOW_SIGNAL_PATTERNS)
 
     user_turns = count_turns(conversation, "user")
@@ -133,7 +230,8 @@ def decision_signal_score(conversation: dict[str, Any], keyword_hit_count: int) 
     score += 3 * len(agency_hits)
     score += 2 * len(reflection_hits)
     score += 2 * len(high_stakes_hits)
-    score += 2 if user_turns >= 3 else 0
+    score += 3 if domain_hits else 0
+    score += 3 if user_turns >= 4 else 0
     score += 1 if assistant_turns >= 2 else 0
     score -= min(4, len(low_signal_hits))
     score -= 4 if looks_like_code_only(text) else 0
@@ -144,9 +242,18 @@ def decision_signal_score(conversation: dict[str, Any], keyword_hit_count: int) 
         "agency_delegation": agency_hits,
         "reflection": reflection_hits,
         "high_stakes": high_stakes_hits,
+        "autonomy_sensitive_domain": domain_hits,
         "low_signal": low_signal_hits,
     }
     return max(score, 0), signals
+
+
+def autonomy_sensitive_domain_hits(text: str) -> list[str]:
+    hits = []
+    for domain, patterns in AUTONOMY_SENSITIVE_DOMAIN_PATTERNS.items():
+        if regex_hits(text, patterns):
+            hits.append(domain)
+    return hits
 
 
 def infer_domain(text: str) -> str:
@@ -161,6 +268,9 @@ def infer_domain(text: str) -> str:
         "immigration": ["visa", "immigration", "green card", "citizenship"],
         "communication": ["reply", "respond", "email", "message", "apologize", "negotiate"],
         "planning": ["plan", "schedule", "roadmap", "timeline", "itinerary", "strategy"],
+        "productivity": ["productivity", "prioritize", "routine", "habit", "time management"],
+        "coding_architecture": ["architecture", "tradeoff", "trade-off", "framework", "tech stack"],
+        "shopping": ["shopping", "buy", "purchase", "product", "recommendation"],
     }
     scores = Counter(
         domain

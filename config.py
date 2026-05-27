@@ -12,6 +12,16 @@ DEFAULT_DECISION_KEYWORDS = [
     "should i",
     "what should i do",
     "help me decide",
+    "which one should i choose",
+    "which should i choose",
+    "help me choose",
+    "choose for me",
+    "pick one",
+    "pick for me",
+    "what would you do",
+    "tell me what to do",
+    "can't decide",
+    "cant decide",
     "choose",
     "decide",
     "pick",
@@ -46,6 +56,7 @@ DEFAULT_DECISION_KEYWORDS = [
     "school",
     "college",
     "phd",
+    "education",
     "visa",
     "immigration",
     "legal",
@@ -57,6 +68,14 @@ DEFAULT_DECISION_KEYWORDS = [
     "rent",
     "lease",
     "relationship",
+    "break up",
+    "marry",
+    "shopping",
+    "buy",
+    "purchase",
+    "productivity",
+    "architecture",
+    "tradeoff",
 ]
 
 
@@ -75,7 +94,7 @@ class PipelineConfig:
     stream_datasets: bool = True
     max_records_per_dataset: Optional[int] = 5000
     min_user_turns: int = 2
-    min_total_turns: int = 4
+    min_total_turns: int = 7
     min_chars: int = 500
     max_chars_for_llm: int = 12000
     representative_excerpt_chars: int = 600
@@ -85,17 +104,17 @@ class PipelineConfig:
         DatasetSpec(source="ShareGPT", hf_name="RyokoAI/ShareGPT52K"),
     )
 
-    llm_provider: str = "azure_openai"
+    llm_provider: str = "openrouter"
     llm_model: str = "gpt-4o-mini"
     llm_temperature: float = 0.0
-    llm_max_tokens: int = 2000
+    llm_max_tokens: int = 8000
     llm_timeout_seconds: int = 60
-    llm_retries: int = 2
-    azure_openai_endpoint: Optional[str] = None
-    azure_openai_api_key: Optional[str] = None
-    azure_openai_api_version: str = "2024-02-15-preview"
+    llm_retries: int = 4
+    llm_concurrency: int = 1
     openai_api_key: Optional[str] = None
     openai_base_url: str = "https://api.openai.com/v1"
+    openrouter_api_key: Optional[str] = None
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
     local_llm_url: Optional[str] = None
 
 
@@ -141,26 +160,22 @@ def load_config_from_env() -> PipelineConfig:
         stream_datasets=(env_value("STREAM_DATASETS", dotenv_values, "true") or "true").lower() != "false",
         max_records_per_dataset=int(max_records) if max_records else 5000,
         min_user_turns=int(env_value("MIN_USER_TURNS", dotenv_values, "2") or "2"),
-        min_total_turns=int(env_value("MIN_TOTAL_TURNS", dotenv_values, "4") or "4"),
+        min_total_turns=int(env_value("MIN_TOTAL_TURNS", dotenv_values, "7") or "7"),
         min_chars=int(env_value("MIN_CHARS", dotenv_values, "500") or "500"),
         max_chars_for_llm=int(env_value("MAX_CHARS_FOR_LLM", dotenv_values, "12000") or "12000"),
         representative_excerpt_chars=int(env_value("REPRESENTATIVE_EXCERPT_CHARS", dotenv_values, "600") or "600"),
-        llm_provider=env_value("LLM_PROVIDER", dotenv_values, "azure_openai") or "azure_openai",
+        llm_provider=env_value("LLM_PROVIDER", dotenv_values, "openrouter") or "openrouter",
         llm_model=env_value("LLM_MODEL", dotenv_values, "gpt-4o-mini") or "gpt-4o-mini",
         llm_temperature=float(env_value("LLM_TEMPERATURE", dotenv_values, "0.0") or "0.0"),
-        llm_max_tokens=int(env_value("LLM_MAX_TOKENS", dotenv_values, "2000") or "2000"),
+        llm_max_tokens=int(env_value("LLM_MAX_TOKENS", dotenv_values, "5000") or "5000"),
         llm_timeout_seconds=int(env_value("LLM_TIMEOUT_SECONDS", dotenv_values, "60") or "60"),
-        llm_retries=int(env_value("LLM_RETRIES", dotenv_values, "2") or "2"),
-        azure_openai_endpoint=env_value("AZURE_OPENAI_ENDPOINT", dotenv_values),
-        azure_openai_api_key=env_value("AZURE_OPENAI_API_KEY", dotenv_values),
-        azure_openai_api_version=env_value(
-            "AZURE_OPENAI_API_VERSION",
-            dotenv_values,
-            "2024-02-15-preview",
-        )
-        or "2024-02-15-preview",
+        llm_retries=int(env_value("LLM_RETRIES", dotenv_values, "4") or "4"),
+        llm_concurrency=max(1, int(env_value("LLM_CONCURRENCY", dotenv_values, "1") or "1")),
         openai_api_key=env_value("OPENAI_API_KEY", dotenv_values),
         openai_base_url=env_value("OPENAI_BASE_URL", dotenv_values, "https://api.openai.com/v1")
         or "https://api.openai.com/v1",
+        openrouter_api_key=env_value("OPENROUTER_API_KEY", dotenv_values),
+        openrouter_base_url=env_value("OPENROUTER_BASE_URL", dotenv_values, "https://openrouter.ai/api/v1")
+        or "https://openrouter.ai/api/v1",
         local_llm_url=env_value("LOCAL_LLM_URL", dotenv_values),
     )

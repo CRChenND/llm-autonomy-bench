@@ -65,11 +65,31 @@ Each turn should contain a recognizable role (`user`, `assistant`, `human`, `gpt
 
 ## Recommended Workflow
 
-1. Export or prepare a pilot set as JSONL.
+1. Use the bundled WildChat RAE v2 positive/borderline review set, or export another pilot set as JSONL.
 2. Load the annotation app.
-3. Set a shared project ID, such as `pilot-v1`.
+3. Set a shared project ID, such as `wildchat-rae-v2-positive-review`.
 4. Enter your own annotator ID, such as `coder-01`.
 5. One project owner imports the cases.
 6. Each annotator loads the same project ID, enters their own annotator ID, and annotates independently.
 7. To retrieve existing work, reload the same project with the same annotator ID.
 8. Export annotations for adjudication and reliability analysis.
+
+## Bundled WildChat RAE v2 Review Set
+
+The app includes `wildchat_rae_v2_positive_review_cases.json`, generated from:
+
+```text
+data/autonomy_seed_cases/wildchat_rae_v2_screened_results.jsonl
+```
+
+It contains the 39 unique positive/borderline review cases selected by any of:
+
+- `keep_for_rae`
+- `keep_for_main_analysis`
+- `keep_for_manual_review`
+- `decision_oriented_score == 3`
+- `risk_level in {medium, high}`
+
+If the loaded Firestore project has no `cases` documents, the app automatically falls back to this bundled set. With the default three annotators, each case receives two reviewers and each annotator receives 26 cases.
+
+The bundled cases also include LLM screening hints on user turns when available: `UIS`, `CES`, preference stability, utterance summary, rationale, and evidence snippets. These are displayed as reference material only; they do not prefill the human annotation fields.
